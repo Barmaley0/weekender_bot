@@ -1,11 +1,12 @@
 from aiogram import F, Router
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-import app.keyboards as kb
 import app.database.requests as req
+import app.keyboards as kb
+
 from app.states import DateUser
-from aiogram.fsm.context import FSMContext
 
 
 router_user = Router()
@@ -32,11 +33,15 @@ async def years_category(message: Message, state: FSMContext) -> None:
     )
 
 
-@router_user.callback_query(F.data.startswith('category_'))
+@router_user.callback_query(F.data.startswith("category_"))
 async def status_marital(callback: CallbackQuery, state: FSMContext) -> None:
-    await state.update_data(year=callback.data)
-    await state.set_state(DateUser.status)
-    await callback.answer("Вы выбрали возрастную категорию")
+    if callback.data is not None:
+        year_category = callback.data.split("_")[1]
+        await state.update_data(year=year_category)
+        await state.set_state(DateUser.status)
+        await callback.answer("Вы выбрали возрастную категорию")
+    else:
+        await state.update_data(year=None)
     if isinstance(callback.message, Message):
         await callback.message.answer(
             "Выберите семейное положение.",
@@ -44,13 +49,23 @@ async def status_marital(callback: CallbackQuery, state: FSMContext) -> None:
         )
 
 
-@router_user.callback_query(DateUser.status)
+@router_user.callback_query(F.data.startswith("status_"))
 async def status_save(callback: CallbackQuery, state: FSMContext) -> None:
-    await state.update_data(status=callback.data)
-    data = await state.get_data()
-    await callback.answer('Фильтр сохранен. Получите подборку мероприятий для вас.')
+    if callback.data is not None:
+        status_marital = callback.data.split("_")[1]
+        await state.update_data(status=status_marital)
+        data = await state.get_data()
+        if data["year"] is not None and data["status"] is not None:
+            await req.set_user_data_save(callback.from_user.id, data["year"], data["status"])
+            await callback.answer("Фильтр сохранен. Получите подборку мероприятий для вас.")
+    else:
+        await state.update_data(status=None)
+        data = await state.get_data()
     if isinstance(callback.message, Message):
         await callback.message.answer(
-            f'Возрастная категория: {data["year"]}\nСемейное положение: {data["status"]}',
+            f"""Возрастная категория: {data["year"]}
+Семейное положение: {data["status"]}
+        Создаем подборку......
+            """,
         )
     await state.clear()

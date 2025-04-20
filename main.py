@@ -5,8 +5,8 @@ import os
 from aiogram import Bot, Dispatcher
 from dotenv import load_dotenv
 
-from app.handlers import router_user
 from app.database.models import create_db_and_tables
+from app.handlers import router_user
 
 
 load_dotenv()
