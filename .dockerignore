@@ -1,0 +1,15 @@
+# .dockerignore
+.env
+.git
+.gitignore
+.dockerignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+.env.local
+.env.development
+*.log
+*.sqlite3
+*.md
