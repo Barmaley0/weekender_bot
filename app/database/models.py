@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -23,6 +23,8 @@ class User(Base):
     status: Mapped[str] = mapped_column(ForeignKey("marital_statuses.id"), nullable=True)
     date_create: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=True)
     date_update: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=True)
+    points: Mapped[int] = mapped_column(Integer(), default=100, nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean(), default=False, nullable=False)
 
     def __repr__(self) -> str:
         return f"User id: {self.id}, tg_id: {self.tg_id}"

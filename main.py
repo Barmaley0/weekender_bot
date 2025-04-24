@@ -1,10 +1,10 @@
 import asyncio
-import logging
 import os
 
 from aiogram import Bot, Dispatcher
 from dotenv import load_dotenv
 
+from app.admin import router_admin
 from app.database.models import create_db_and_tables
 from app.handlers import router_user
 
@@ -23,28 +23,12 @@ async def main() -> None:
     bot = Bot(token=TOKEN)
     dp = Dispatcher()
     dp.include_router(router_user)
+    dp.include_router(router_admin)
     await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         print("Bot is stopped")
-
-"""
-1. Пользователь нажимает кнопку старт.
-1.1 Выходит приветствие.
-1.2 Информацию уходит в базу данных.
-1.3 Вывод клавиатуры ReplyKeboardMarkup(Кнопи клавиатуры: Подобрать мероприятие,
-Проверить баллы, Остались вопросы, Изменить ифльтры, Чат Weekender).
-2. Пользователь нажимает кнопку Подобрать мероприятие.
-2.1 Выходит сообщение(Введите данные для поиска. Выберите возрастную категорию).
-2.2 К сообщению прекреплена клавиатура InlineKeyboardMarkup(Кнопки клавиатуры возраст:
-18-24, 25-34, 35-44, 45-54, 55+).
-2.3 Выходит сооищение(Введите семейный статус).
-2.4 К сообщению прекреплена клавиатура InlineKeyboardMarkup(Кнопки клавиатуры статус:
-Женат, Замужем, Не женат, Не замужем).
-2.5 Информация уходит в базу данных.
-"""
