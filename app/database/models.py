@@ -1,7 +1,7 @@
 import os
 
 from dotenv import load_dotenv
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -29,8 +29,8 @@ class User(Base):
     tg_id = mapped_column(BigInteger, unique=True)
     first_name: Mapped[str] = mapped_column(String(40), nullable=True)
     username: Mapped[str] = mapped_column(String(40), nullable=True)
-    year: Mapped[str] = mapped_column(ForeignKey("categories_years.id"), nullable=True)
-    status: Mapped[str] = mapped_column(ForeignKey("marital_statuses.id"), nullable=True)
+    year: Mapped[str] = mapped_column(String(20), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=True)
     date_create: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=True)
     date_update: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=True)
     points: Mapped[int] = mapped_column(Integer(), default=100, nullable=False)
