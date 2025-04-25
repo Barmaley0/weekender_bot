@@ -1,0 +1,98 @@
+name: Deploy Bot
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ruff
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11.3
+      - name: Install requirements
+        run: pip install -r requirements.txt
+      - name: Lint with ruff
+        run: ruff check .
+
+  types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mypy
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11.3
+      - name: Install requirements
+        run: pip install -r requirements.txt
+      - name: Types with mypy
+        run: mypy --ignore-missing-imports --exclude migrations .
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Black
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11.3
+      - name: Install requirements
+        run: pip install -r requirements.txt
+      - name: Format with black
+        run: black .
+
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Isort
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11.3
+      - name: Install requirements
+        run: pip install -r requirements.txt
+      - name: Import with isort
+        run: isort .
+
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Получаем код из репозитория
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Настраиваем SSH-доступ к серверу
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          known_hosts: ${{ secrets.KNOWN_HOSTS }}
+
+      # 3. Деплой на сервер
+      - name: Deploy
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          DB_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+          cd ~/weekender_bot
+          
+          # Обновляем код
+          git fetch --all
+          git reset --hard origin/main
+          
+          # Создаем/обновляем .env файл
+          cat > .env <<EOL
+          BOT_TOKEN=$BOT_TOKEN
+          POSTGRES_PASSWORD=$DB_PASSWORD
+          DATABASE_URL=postgresql+asyncpg://postgres:$DB_PASSWORD@db:5432/weekender_db
+          EOL
+          
+          # Перезапускаем сервисы
+          docker-compose down
+          docker-compose build --no-cache
+          docker-compose up -d
+          EOF
