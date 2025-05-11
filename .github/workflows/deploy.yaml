@@ -51,10 +51,29 @@ jobs:
 
       - name: Verify SSH connection
         run: |
-          if ! ssh -p ${{ secrets.SSH_PORT }} -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo 'SSH connection successful!'"; then
-            echo "SSH connection failed"
-            exit 1
-          fi
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > tmp_key
+          chmod 600 tmp_key
+
+          SSH_DEBUG_OPTS="-vvv -o IdentitiesOnly=yes -o ConnectTimeout=10"
+          echo "Attempting SSH connection to ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.SSH_PORT }}"
+
+          ssh $SSH_DEBUG_OPTS \
+            -p ${{ secrets.SSH_PORT }} \
+            -i tmp_key \
+            -o UserKnownHostsFile=<(echo "${{ secrets.KNOWN_HOSTS }}") \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo 'SSH connection successful'" || {
+              echo "::error::SSH connection failed"
+              echo "Debug info:"
+              echo "1. Проверьте содержимое SSH_PRIVATE_KEY в Secrets"
+              echo "2. Убедитесь, что KNOWN_HOSTS содержит актуальный отпечаток"
+              echo "3. Проверьте доступность порта ${{ secrets.SSH_PORT }} на сервере"
+              echo "4. Убедитесь, что пользователь ${{ secrets.SSH_USER }} существует"
+              rm -f tmp_key
+              exit 1
+            }
+
+          rm -f tmp_key
+          echo "SSH connection verified successfully"
 
       - name: Deploy application
         env:
