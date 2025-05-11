@@ -9,53 +9,57 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Ruff
+      - name: ruff
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install requirements
-        run: pip install -r requirements.txt
-      - name: Lint with ruff
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run Ruff linter
         run: ruff check .
 
   types:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Mypy
+      - name: mypy
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install requirements
-        run: pip install -r requirements.txt
-      - name: Types with mypy
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install types-pytz
+      - name: Run Mypy
         run: mypy --ignore-missing-imports --exclude migrations .
 
   format:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Black
+      - name: black
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install requirements
+      - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Format with black
-        run: black .
+      - name: Run Black formatter
+        run: black --check .
 
   import:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Isort
+      - name: isort
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install requirements
+      - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Import with isort
-        run: isort .
+      - name: Run Isort
+        run: isort --check .
 
   deploy:
     runs-on: ubuntu-latest
@@ -69,33 +73,75 @@ jobs:
         with:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           known_hosts: ${{ secrets.KNOWN_HOSTS }}
-          port: 10122
+          port: ${{ secrets.SSH_PORT }}
 
       - name: Verify SSH connection
         run: |
-          ssh -p 10122 -vvv -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo 'SSH connection successful!'"
+          if ! ssh -p ${{ secrets.SSH_PORT }} -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo 'SSH connection successful!'"; then
+            echo "SSH connection failed"
+            exit 1
+          fi
 
-      - name: Deploy
+      - name: Deploy application
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          DB_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
         run: |
-          ssh -p 10122 -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-          cd ~/weekender_bot || exit 1
-          
-          # Обновляем код
+          ssh -p ${{ secrets.SSH_PORT }} -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+          set -euo pipefail
+
+          # Verify enviroment
+          if [[ -z "$BOT_TOKEN" || -z "$POSTGRES_PASSWORD" || -z "$POSTGRES_DB" ]]; then
+            echo "Error: BOT_TOKEN, POSTGRES_PASSWORD or POSTGRES_DB is empty!"; exit 1
+          fi
+
+          echo "Starting deployment process..."
+          cd ~/weekender_bot || { echo "Failed to cd into weekender_bot directory"; exit 1; }
+
+          # Verify git repository state
+          if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            echo "Not a git repository"
+            exit 1
+          fi
+
+          # Update code
+          echo "Updating code from repository..."
           git fetch --all
           git reset --hard origin/main
-          
-          # Создаем/обновляем .env файл
-          cat > .env <<EOL
-          BOT_TOKEN=$BOT_TOKEN
-          POSTGRES_PASSWORD=$DB_PASSWORD
-          DATABASE_URL=postgresql+asyncpg://postgres:$DB_PASSWORD@db:5432/weekender
-          EOL
-          
-          # Перезапускаем сервисы
-          docker-compose down
-          docker-compose build --no-cache
-          docker-compose up -d
+
+          # Update .env variables (preserve existing ones)
+          echo "Updating .env file..."
+          grep -v "BOT_TOKEN=" .env > .env.tmp || true
+          grep -v "POSTGRES_USER=" .env.tmp > .env || true
+          grep -v "POSTGRES_PASSWORD=" .env > .env.tmp || true
+          grep -v "POSTGRES_DB=" .env.tmp > .env || true
+          grep -v "DATABASE_URL=" .env > .env.tmp || true
+          mv .env.tmp .env
+
+          echo "BOT_TOKEN=$BOT_TOKEN" >> .env
+          echo "POSTGRES_DB=$POSTGRES_DB" >> .env
+          echo "POSTGRES_USER=$POSTGRES_USER" >> .env
+          echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> .env
+          echo "DATABASE_URL=postgresql+asyncpg://$POSTGRES_USER:$POSTGRES_PASSWORD@db:5432/$POSTGRES_DB" >> .env
+
+          # Rebuild and restart only the bot
+          echo "Rebuilding bot container..."
+          docker-compose build --no-cache bot
+          docker-compose up -d --force-recreate bot
+
+          # Apply migrations
+          docker-compose exec bot alembic upgrade head 2>&1 | tee alembic.log || {
+            echo "❌ Alembic migration failed. Logs:"
+            cat alembic.log
+            exit 1
+          }
+
+          # Verify deployment
+          echo "Checking services..."
+          docker-compose ps | grep bot
+          docker-compose logs bot --tail=20
+
+          echo "✅ Deployment successful!"
           EOF

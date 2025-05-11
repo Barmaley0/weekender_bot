@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+select = [
+  "E",   # Pycodestyle
+  "F",   # Pyflakes
+  "W",   # Pycodestyle warnings
+  "I",   # isort
+  "B",   # flake8-bugbear
+  "UP",  # pyupgrade (автоматическое обновление синтаксиса)
+]
+ignore = ["W291", "E501"]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+combine-as-imports = true
+force-single-line = false
+lines-after-imports = 2
+lines-between-types = 1
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["frozen_model"]
+
+[tool.mypy]
+ignore_missing_imports = true
+python_version = "3.11"
