@@ -1,12 +1,13 @@
+from collections.abc import Awaitable, Sequence
 from datetime import datetime
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Callable, Optional
 
 import pytz
 
 from sqlalchemy import ScalarResult, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.models import CategoryYear, MaritalStatus, User, async_session
+from app.database.models import CategoryYear, Event, MaritalStatus, User, async_session
 
 
 def connect_db(func: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
@@ -30,10 +31,9 @@ async def get_user_points(session: AsyncSession, tg_id: int) -> int:
 
 @connect_db
 async def set_user(session: AsyncSession, tg_id: int, first_name: str, username: Optional[str]) -> None:
-
-    utc_timezone = pytz.timezone("UTC")
+    utc_timezone = pytz.timezone('UTC')
     created_at_utc = utc_timezone.localize(datetime.utcnow())
-    local_timezone = pytz.timezone("Europe/Moscow")
+    local_timezone = pytz.timezone('Europe/Moscow')
     created_at_local = created_at_utc.astimezone(local_timezone)
 
     user = await session.scalar(select(User).where(User.tg_id == tg_id))
@@ -61,10 +61,9 @@ async def get_marital_status(session: AsyncSession) -> ScalarResult[MaritalStatu
 
 @connect_db
 async def set_user_data_save(session: AsyncSession, tg_id: int, year: str, status: str) -> None:
-
-    utc_timezone = pytz.timezone("UTC")
+    utc_timezone = pytz.timezone('UTC')
     created_at_utc = utc_timezone.localize(datetime.utcnow())
-    local_timezone = pytz.timezone("Europe/Moscow")
+    local_timezone = pytz.timezone('Europe/Moscow')
     created_at_local = created_at_utc.astimezone(local_timezone)
 
     await session.execute(
@@ -80,6 +79,12 @@ async def set_user_data_save(session: AsyncSession, tg_id: int, year: str, statu
 
 
 @connect_db
+async def get_event_for_user(session: AsyncSession, year: str, status: str) -> Sequence[Event] | None:
+    events = await session.scalars(select(Event).where(Event.year == year, Event.status == status))
+    return events.all()
+
+
+@connect_db
 async def is_admin(session: AsyncSession, tg_id: int) -> bool:
     try:
         check_admin = await session.scalar(select(User.is_admin).where(User.tg_id == tg_id))
@@ -87,7 +92,7 @@ async def is_admin(session: AsyncSession, tg_id: int) -> bool:
             return bool(check_admin)
         return False
     except Exception as e:
-        print(f"Проверка администратора для tg_id {tg_id} {e}")
+        print(f'Проверка администратора для tg_id {tg_id} {e}')
         return False
 
 

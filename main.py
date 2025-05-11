@@ -1,5 +1,8 @@
 import asyncio
+import logging
 import os
+
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher
 from dotenv import load_dotenv
@@ -9,14 +12,25 @@ from app.database.models import create_db_and_tables
 from app.handlers import router_user
 
 
-load_dotenv()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
-    TOKEN = os.environ.get("BOT_TOKEN")
+    project_root = Path(__file__).parent.parent
+    env_path = project_root / '.env.local'
+
+    if env_path.exists():
+        load_dotenv(env_path)
+        logger.info('Load bot: .env.local')
+    else:
+        load_dotenv()
+        logger.info('Load bot: .env')
+
+    TOKEN = os.environ.get('BOT_TOKEN')
 
     if TOKEN is None:
-        raise ValueError("BOT_TOKEN is not set")
+        raise ValueError('BOT_TOKEN is not set')
 
     await create_db_and_tables()
 
@@ -27,8 +41,8 @@ async def main() -> None:
     await dp.start_polling(bot)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("Bot is stopped")
+        logger.info('Bot stopped')

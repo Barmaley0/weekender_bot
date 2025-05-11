@@ -54,6 +54,10 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# Make
+Makefile
+makefile
+
 # Translations
 *.mo
 *.pot
@@ -132,12 +136,16 @@ celerybeat.pid
 
 # Environments
 .env
+.env.local
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Docker
+docker-compose.local.yaml
 
 # Spyder project settings
 .spyderproject
