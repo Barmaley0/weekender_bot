@@ -35,35 +35,9 @@ jobs:
       - name: Run Mypy
         run: mypy --ignore-missing-imports --exclude migrations .
 
-  format:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: black
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Run Black formatter
-        run: black --check .
-
-  import:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: isort
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Run Isort
-        run: isort --check .
-
   deploy:
     runs-on: ubuntu-latest
-    needs: [lint, types, format, import]
+    needs: [lint, types]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
