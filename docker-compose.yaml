@@ -27,6 +27,9 @@ services:
     container_name: weekender_bot
     env_file:
       - .env
+    volumes:
+      - ./alembic.ini:/app/alembic.ini
+      - ./migrations:/app/migrations
     ports:
       - "127.0.0.1:3001:3000"
     depends_on:
