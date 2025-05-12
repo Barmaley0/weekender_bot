@@ -112,22 +112,27 @@ jobs:
           echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> .env
           echo "DATABASE_URL=postgresql+asyncpg://$POSTGRES_USER:$POSTGRES_PASSWORD@db:5432/$POSTGRES_DB" >> .env
 
+          # Check for existence of alembic.ini
+          if [ ! -f alembic.ini ]; then
+            echo "Initializing Alembic..."
+            docker-compose run --rm bot alembic init alembic
+            sed -i "s|sqlalchemy.url = .*|sqlalchemy.url = ${DATABASE_URL}|" alembic.ini
+            sed -i "s|^script_location =.*|script_location = alembic|" alembic.ini
+          fi
+           
           # Rebuild and restart only the bot
           echo "Rebuilding bot container..."
           docker-compose build --no-cache bot
           docker-compose up -d --force-recreate bot
 
-          # Check for existence of alembic.ini
-           if [ ! -f alembic.ini ]; then
-             echo "Creating alembic.ini..."
-             docker-compose run --rm bot alembic init alembic
-           fi
-
           # Apply migrations
+          echo "Applying migrations..."
           docker-compose exec bot alembic upgrade head 2>&1 | tee alembic.log || {
             echo "❌ Alembic migration failed. Logs:"
             cat alembic.log
-            exit 1
+            echo "Trying to initialize Alembic again..."
+            docker-compose run --rm bot alembic init alembic
+            docker-compose exec bot alembic upgrade head || exit 1
           }
 
           # Verify deployment
