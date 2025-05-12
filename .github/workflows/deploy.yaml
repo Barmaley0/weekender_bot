@@ -72,7 +72,7 @@ jobs:
               ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
           set -euo pipefail
 
-          # Устанавливаем переменные окружения
+          # Setting environment variables
           export BOT_TOKEN='${{ secrets.BOT_TOKEN }}'
           export POSTGRES_USER='${{ secrets.POSTGRES_USER }}'
           export POSTGRES_PASSWORD='${{ secrets.POSTGRES_PASSWORD }}'
