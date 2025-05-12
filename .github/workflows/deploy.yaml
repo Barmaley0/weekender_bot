@@ -117,6 +117,12 @@ jobs:
           docker-compose build --no-cache bot
           docker-compose up -d --force-recreate bot
 
+          # Check for existence of alembic.ini
+           if [ ! -f alembic.ini ]; then
+             echo "Creating alembic.ini..."
+             docker-compose run --rm bot alembic init alembic
+           fi
+
           # Apply migrations
           docker-compose exec bot alembic upgrade head 2>&1 | tee alembic.log || {
             echo "❌ Alembic migration failed. Logs:"
