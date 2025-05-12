@@ -42,19 +42,22 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          eval "$(ssh-agent -s)"
+
           if [[ -n "${{ secrets.SSH_KEY_PASSPHRASE }}" ]]; then
-            echo "Setting up SSH passphrase"
-            echo "echo '${{ secrets.SSH_KEY_PASSPHRASE }}'" > ~/.ssh/askpass
-            chmod +x ~/.ssh/askpass
-            export DISPLAY=:0
-            export SSH_ASKPASS=~/.ssh/askpass
-            setsid ssh-add ~/.ssh/id_rsa </dev/null
+            echo "SSH key has passphrase"
+            ssh-add ~/.ssh/id_ed25519 <<< "${{ secrets.SSH_KEY_PASSPHRASE }}"
+          else
+            echo "SSH key has no passphrase"
+            ssh-add ~/.ssh/id_ed25519
           fi
+
           ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
       - name: Verify SSH connection
@@ -64,10 +67,9 @@ jobs:
               ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo 'SSH connection successful'" || {
                 echo "::error::SSH connection failed"
                 echo "Debug info:"
-                echo "1. Проверьте содержимое SSH_PRIVATE_KEY в Secrets"
+                echo "1. Проверьте SSH_PRIVATE_KEY в Secrets"
                 echo "2. Проверьте SSH_KEY_PASSPHRASE (если ключ защищён)"
-                echo "3. Проверьте доступность порта ${{ secrets.SSH_PORT }} на сервере"
-                echo "4. Убедитесь, что пользователь ${{ secrets.SSH_USER }} существует"
+                echo "3. Проверьте доступность сервера"
                 exit 1
               }
 
@@ -78,7 +80,15 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
         run: |-
-          ssh -T -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+          if [[ -n "${{ secrets.SSH_KEY_PASSPHRASE }}" ]]; then
+            ssh -T -p ${{ secrets.SSH_PORT }} \
+                -o BatchMode=yes \
+                ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} <<< "$(cat <<'EOF'
+          else
+            ssh -T -p ${{ secrets.SSH_PORT }} \
+                -o BatchMode=yes \
+                ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+          fi
           set -euo pipefail
 
           # Verify environment
