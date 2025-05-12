@@ -48,29 +48,20 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          sudo apt-get update && sudo apt-get install -y sshpass
           ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
       - name: Verify SSH connection
         run: |
-          if [[ -n "${{ secrets.SSH_KEY_PASSPHRASE }}" ]]; then
-            sshpass -p "${{ secrets.SSH_KEY_PASSPHRASE }}" ssh -o BatchMode=yes \
-                -p ${{ secrets.SSH_PORT }} \
-                -i ~/.ssh/id_ed25519 \
-                ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo 'SSH connection successful'"
-          else
-            ssh -o BatchMode=yes \
-                -p ${{ secrets.SSH_PORT }} \
-                -i ~/.ssh/id_ed25519 \
-                ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo 'SSH connection successful'"
-          fi || {
+          ssh -o BatchMode=yes \
+              -p ${{ secrets.SSH_PORT }} \
+              -i ~/.ssh/id_ed25519 \
+              ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo 'SSH connection successful'" || {
             echo "::error::SSH connection failed"
             echo "Debug info:"
             echo "1. Проверьте формат SSH_PRIVATE_KEY в Secrets"
-            echo "2. Проверьте SSH_KEY_PASSPHRASE (если ключ защищён)"
-            echo "3. Проверьте содержимое ~/.ssh/authorized_keys на сервере"
-            echo "4. Проверьте логи на сервере: sudo tail -f /var/log/auth.log"
+            echo "2. Проверьте содержимое ~/.ssh/authorized_keys на сервере"
+            echo "3. Проверьте логи на сервере: sudo tail -f /var/log/auth.log"
             exit 1
           }
 
@@ -81,16 +72,9 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
         run: |
-          if [[ -n "${{ secrets.SSH_KEY_PASSPHRASE }}" ]]; then
-            sshpass -p "${{ secrets.SSH_KEY_PASSPHRASE }}" ssh -T \
-                -p ${{ secrets.SSH_PORT }} \
-                -i ~/.ssh/id_ed25519 \
-                ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-          else
-            ssh -T -p ${{ secrets.SSH_PORT }} \
-                -i ~/.ssh/id_ed25519 \
-                ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-          fi
+          ssh -T -p ${{ secrets.SSH_PORT }} \
+              -i ~/.ssh/id_ed25519 \
+              ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
           set -euo pipefail
 
           # Verify environment
