@@ -66,16 +66,17 @@ jobs:
           }
 
       - name: Deploy application
-        env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
         run: |
           ssh -T -p ${{ secrets.SSH_PORT }} \
               -i ~/.ssh/id_ed25519 \
               ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
           set -euo pipefail
+
+          # Устанавливаем переменные окружения
+          export BOT_TOKEN='${{ secrets.BOT_TOKEN }}'
+          export POSTGRES_USER='${{ secrets.POSTGRES_USER }}'
+          export POSTGRES_PASSWORD='${{ secrets.POSTGRES_PASSWORD }}'
+          export POSTGRES_DB='${{ secrets.POSTGRES_DB }}'
 
           # Verify environment
           if [[ -z "$BOT_TOKEN" || -z "$POSTGRES_PASSWORD" || -z "$POSTGRES_DB" ]]; then
