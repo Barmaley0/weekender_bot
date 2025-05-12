@@ -120,7 +120,13 @@ jobs:
             echo "- migrations/ (with env.py, versions/)"
             exit 1
           fi
-           
+
+          # Rebuild and restart only the bot
+          echo "Copying migrations files to container..."
+          docker-compose exec bot sh -c "mkdir -p /app/migrations"
+          docker cp alembic.ini weekender_bot:/app/alembic.ini
+          docker cp migrations/ weekender_bot:/app/migrations/
+
           # Rebuild and restart only the bot
           echo "Rebuilding bot container..."
           docker-compose build --no-cache bot
