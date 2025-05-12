@@ -113,11 +113,12 @@ jobs:
           echo "DATABASE_URL=postgresql+asyncpg://$POSTGRES_USER:$POSTGRES_PASSWORD@db:5432/$POSTGRES_DB" >> .env
 
           # Check for existence of alembic.ini
-          if [ ! -f alembic.ini ]; then
-            echo "Initializing Alembic..."
-            docker-compose run --rm bot alembic init alembic
-            sed -i "s|sqlalchemy.url = .*|sqlalchemy.url = ${DATABASE_URL}|" alembic.ini
-            sed -i "s|^script_location =.*|script_location = alembic|" alembic.ini
+          if [ ! -f alembic.ini ] || [ ! -d migrations ]; then
+            echo "Error: Missing Alembic files!"
+            echo "Required files:"
+            echo "- alembic.ini"
+            echo "- migrations/ (with env.py, versions/)"
+            exit 1
           fi
            
           # Rebuild and restart only the bot
@@ -127,12 +128,21 @@ jobs:
 
           # Apply migrations
           echo "Applying migrations..."
-          docker-compose exec bot alembic upgrade head 2>&1 | tee alembic.log || {
-            echo "❌ Alembic migration failed. Logs:"
-            cat alembic.log
-            echo "Trying to initialize Alembic again..."
-            docker-compose run --rm bot alembic init alembic
-            docker-compose exec bot alembic upgrade head || exit 1
+          docker-compose exec bot sh -c "
+            cd /app && \
+            if [ ! -f alembic.ini ] || [ ! -d migrations ]; then
+              echo 'Alembic files not found in container!';
+              exit 1;
+            fi && \
+            alembic upgrade head" 2>&1 | tee alembic.log
+
+          # Check result apply table
+          docker-compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT * FROM alembic_version" || {
+            echo "❌ Версионность не работает! Проверьте:"
+            echo "1. Наличие таблицы alembic_version в БД"
+            echo "2. Содержимое папки migrations/versions"
+            echo "3. Корректность подключения в alembic.ini"
+            exit 1
           }
 
           # Verify deployment
