@@ -126,23 +126,34 @@ jobs:
           docker-compose build --no-cache bot
           docker-compose up -d --force-recreate bot
 
+          # Checking file conteiner
+          echo "Checking migrations files in container..."
+          docker-compose exec bot sh -c "\
+            [ -f /app/alembic.ini ] || { echo 'alembic.ini not found!'; exit 1; } && \
+            [ -d /app/migrations ] || { echo 'migrations directory not found!'; exit 1; } && \
+            [ -f /app/migrations/env.py ] || { echo 'env.py not found!'; exit 1; }"
+
           # Apply migrations
           echo "Applying migrations..."
           docker-compose exec bot sh -c "
             cd /app && \
-            if [ ! -f alembic.ini ] || [ ! -d migrations ]; then
-              echo 'Alembic files not found in container!';
-              exit 1;
+            if ! alembic current &>/dev/null; then \
+              echo 'Таблица версий не найдена, создаем...'; \
+              alembic stamp head; \
             fi && \
-            alembic upgrade head" 2>&1 | tee alembic.log
+            alembic upgrade head" 2>&1 | tee alembic.log || {
+            echo "❌ Alembic migration failed. Logs:"
+            cat alembic.log
+            exit 1
+          }
 
           # Check result apply table
           docker-compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT * FROM alembic_version" || {
-            echo "❌ Версионность не работает! Проверьте:"
-            echo "1. Наличие таблицы alembic_version в БД"
-            echo "2. Содержимое папки migrations/versions"
-            echo "3. Корректность подключения в alembic.ini"
-            exit 1
+            echo "❌ Таблица версий не создана! Пробуем восстановить..."
+            docker-compose exec bot alembic stamp head || {
+              echo "❌❌ Не удалось создать таблицу версий!";
+              exit 1;
+            }
           }
 
           # Verify deployment
