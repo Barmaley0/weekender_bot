@@ -48,30 +48,31 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          eval "$(ssh-agent -s)"
-
-          if [[ -n "${{ secrets.SSH_KEY_PASSPHRASE }}" ]]; then
-            echo "SSH key has passphrase"
-            ssh-add ~/.ssh/id_ed25519 <<< "${{ secrets.SSH_KEY_PASSPHRASE }}"
-          else
-            echo "SSH key has no passphrase"
-            ssh-add ~/.ssh/id_ed25519
-          fi
-
+          sudo apt-get update && sudo apt-get install -y sshpass
           ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
       - name: Verify SSH connection
         run: |
-          ssh -o BatchMode=yes \
-              -p ${{ secrets.SSH_PORT }} \
-              ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo 'SSH connection successful'" || {
-                echo "::error::SSH connection failed"
-                echo "Debug info:"
-                echo "1. Проверьте SSH_PRIVATE_KEY в Secrets"
-                echo "2. Проверьте SSH_KEY_PASSPHRASE (если ключ защищён)"
-                echo "3. Проверьте доступность сервера"
-                exit 1
-              }
+          if [[ -n "${{ secrets.SSH_KEY_PASSPHRASE }}" ]]; then
+            sshpass -p "${{ secrets.SSH_KEY_PASSPHRASE }}" ssh -o BatchMode=yes \
+                -p ${{ secrets.SSH_PORT }} \
+                -i ~/.ssh/id_ed25519 \
+                ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo 'SSH connection successful'"
+          else
+            ssh -o BatchMode=yes \
+                -p ${{ secrets.SSH_PORT }} \
+                -i ~/.ssh/id_ed25519 \
+                ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo 'SSH connection successful'"
+          fi || {
+            echo "::error::SSH connection failed"
+            echo "Debug info:"
+            echo "1. Проверьте формат SSH_PRIVATE_KEY в Secrets"
+            echo "2. Проверьте SSH_KEY_PASSPHRASE (если ключ защищён)"
+            echo "3. Проверьте содержимое ~/.ssh/authorized_keys на сервере"
+            echo "4. Проверьте логи на сервере: sudo tail -f /var/log/auth.log"
+            exit 1
+          }
 
       - name: Deploy application
         env:
@@ -79,14 +80,15 @@ jobs:
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-        run: |-
+        run: |
           if [[ -n "${{ secrets.SSH_KEY_PASSPHRASE }}" ]]; then
-            ssh -T -p ${{ secrets.SSH_PORT }} \
-                -o BatchMode=yes \
-                ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} <<< "$(cat <<'EOF'
+            sshpass -p "${{ secrets.SSH_KEY_PASSPHRASE }}" ssh -T \
+                -p ${{ secrets.SSH_PORT }} \
+                -i ~/.ssh/id_ed25519 \
+                ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
           else
             ssh -T -p ${{ secrets.SSH_PORT }} \
-                -o BatchMode=yes \
+                -i ~/.ssh/id_ed25519 \
                 ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
           fi
           set -euo pipefail
@@ -95,6 +97,7 @@ jobs:
           if [[ -z "$BOT_TOKEN" || -z "$POSTGRES_PASSWORD" || -z "$POSTGRES_DB" ]]; then
             echo "Error: BOT_TOKEN, POSTGRES_PASSWORD or POSTGRES_DB is empty!"; exit 1
           fi
+
           echo "Starting deployment process..."
           cd ~/weekender_bot || { echo "Failed to cd into weekender_bot directory"; exit 1; }
 
@@ -117,6 +120,7 @@ jobs:
           grep -v "POSTGRES_DB=" .env.tmp > .env || true
           grep -v "DATABASE_URL=" .env > .env.tmp || true
           mv .env.tmp .env
+
           echo "BOT_TOKEN=$BOT_TOKEN" >> .env
           echo "POSTGRES_DB=$POSTGRES_DB" >> .env
           echo "POSTGRES_USER=$POSTGRES_USER" >> .env
@@ -139,5 +143,6 @@ jobs:
           echo "Checking services..."
           docker-compose ps | grep bot
           docker-compose logs bot --tail=20
+
           echo "✅ Deployment successful!"
           EOF
