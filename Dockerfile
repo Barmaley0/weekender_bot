@@ -2,17 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN python -m pip install --upgrade pip
+RUN python -m pip install --upgrade pip --no-cache-dir
 
 COPY requirements.txt /app
 
-COPY main.py .
-COPY app/ ./app/
-COPY alembic.ini .
-COPY migrations/ ./migrations/
-COPY env.py ./migrations/
-
-RUN python -m pip install -r requirements.txt
+RUN python -m pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 

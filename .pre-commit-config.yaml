@@ -1,3 +1,16 @@
+---
+exclude: |
+  (?x)^(
+    \.venv/|
+    migrations/|
+    __pycache__/|
+    \.git/|
+    \.env|
+    tests/fixtures/|
+    docs/_build/|
+    \.github/
+  )
+
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.

@@ -1,36 +1,22 @@
+import os, sys
+
 import asyncio
-import os
-
 from logging.config import fileConfig
-from pathlib import Path
-from typing import cast
 
-from alembic import context
-from dotenv import load_dotenv
-from sqlalchemy import create_engine, pool
+from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
+
+from alembic import context
 
 from app.database.models import Base
 
 
-# this is the Alembic env.py script.
-project_root = Path(__file__).parent.parent.parent
-env_path = project_root / '.env.local'
-
-if env_path.exists():
-    load_dotenv(env_path)
-else:
-    load_dotenv()
-
-db_url = os.getenv('DATABASE_URL')
-if not db_url:
-    raise ValueError('DATABASE_URL in ont .env.local is not set')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-config.set_main_option('sqlalchemy.url', cast(str, db_url))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -61,13 +47,12 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option('sqlalchemy.url')
+    url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
-        dialect_opts={'paramstyle': 'named'},
-        compare_type=True,
+        dialect_opts={"paramstyle": "named"},
     )
 
     with context.begin_transaction():
@@ -75,11 +60,7 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(
-        connection=connection,
-        target_metadata=target_metadata,
-        compare_server_default=True,
-    )
+    context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():
         context.run_migrations()
@@ -93,7 +74,7 @@ async def run_async_migrations() -> None:
 
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
-        prefix='sqlalchemy.',
+        prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
 
@@ -105,15 +86,8 @@ async def run_async_migrations() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
-    if db_url is None:
-        raise ValueError('DATABASE_URL in ont .env.local is not set')
 
-    if db_url.startswith('postgresql+asyncpg://'):
-        asyncio.run(run_async_migrations())
-    else:
-        engine = create_engine(cast(str, db_url))
-        with engine.connect() as connection:
-            do_run_migrations(connection)
+    asyncio.run(run_async_migrations())
 
 
 if context.is_offline_mode():
