@@ -1,6 +1,8 @@
 import asyncio
 import logging
 
+from typing import Optional
+
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
@@ -48,10 +50,13 @@ async def safe_delete_message(message: MaybeInaccessibleMessage) -> bool:
             return False
 
 
-async def send_events_list(message: Message, callback: CallbackQuery, events: list, bot: Bot) -> None:
-    if callback.message is None:
-        return
-    chat_id = callback.message.chat.id
+async def send_events_list(
+    message: Message,
+    events: list,
+    bot: Bot,
+    callback: Optional[CallbackQuery] = None,
+) -> None:
+    chat_id = message.chat.id
     logger.info(f'chat_id: {chat_id}')
 
     async def show_typing() -> None:
@@ -60,53 +65,73 @@ async def send_events_list(message: Message, callback: CallbackQuery, events: li
     if not events:
         await show_typing()
         await asyncio.sleep(1)
-        await message.answer('⏳ К сожалению, сейчас нет подходящих мероприятий. Мы сообщим вам, когда появятся новые!')
+        await message.answer(
+            """
+⏳ К сожалению, сейчас нет подходящих мероприятий. Мы сообщим, когда появятся новые!
+
+А пока можешь присоединиться к чату @weekender_chat и позвать туда своих друзей 💜
+            """
+        )
         return
 
     for event in events:
         await show_typing()
         await asyncio.sleep(1)
-        await message.answer(f'🎉 Вот мероприятие, которое может вам понравиться:\n{event.url}')
+        event_message = f'{event.description if event.description else ""}\n\n{event.url}'
+
+        await message.answer(event_message)
 
 
 @router_user.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    if message.from_user is not None:
+    if message.from_user:
         await req.set_user(
             message.from_user.id,
             message.from_user.first_name,
             message.from_user.username,
         )
-        await message.answer(
-            f"""
-<b>Привет! {message.from_user.first_name} ты в тёплом месте 🌴🌞</b>
+
+        try:
+            is_user_data = await req.user_data_exists(message.from_user.id)
+
+            await message.answer(
+                f"""
+<b>Привет, {f'{message.from_user.first_name}' if message.from_user.first_name else ''}! Ты в тёплом месте 🌴</b>
 Тут мы помогаем находить события, после которых хочется жить чуть ярче, смеяться чуть громче и обниматься чуть крепче.
 
-Расскажи немного о себе — и я подберу для тебя что-то по вкусу.
-От вечеринок до уютных арт-лекций.
+От вечеринок до уютных арт-лекций — расскажи немного о себе и я подберу тебе что-то по вкусу.
 
-В общем, добро пожаловать. Чувствуй себя как дома (но с музыкой получше). 🎧
+🎁 Чем активнее ты — тем больше баллов получаешь. Потом можешь использовать их, чтобы получить скидку, апнуться до уровня "Гуру вайба" или даже стать нашим амбассадором и получать приятные бонусы.
+
+💜 А ещё у нас есть чат @weekender_chat, где можно найти друзей, договориться пойти вместе на событие и просто быть собой. Потому что в компании — всегда легче дышится. Подпишись на чат и получи приветственные 100 баллов.
+
+Чувствуй себя как дома. Здесь тебя ждут.
             """,
-            reply_markup=await kb.get_main_kb(),
-            parse_mode='html',
+                reply_markup=await kb.get_main_kb(user_data_exists=is_user_data),
+                parse_mode='html',
+            )
+        except Exception as e:
+            logger.error(f'Errof checking user data: {e}')
+
+
+@router_user.message(F.photo)
+async def photo(message: Message) -> None:
+    try:
+        if not message.photo:
+            await message.answer('❌ фото не обнаружено!')
+            return
+        file_id_s = message.photo[-1].file_id
+        await message.answer_photo(
+            file_id_s,
+            caption='Вот твоя фотка',
         )
-    else:
-        await message.answer(
-            """
-<b>Привет! Ты в тёплом месте 🌴🌞</b>
-Тут мы помогаем находить события, после которых хочется жить чуть ярче, смеяться чуть громче и обниматься чуть крепче.
-
-Расскажи немного о себе — и я подберу для тебя что-то по вкусу.
-От вечеринок до уютных арт-лекций.
-
-В общем, добро пожаловать. Чувствуй себя как дома (но с музыкой получше). 🎧
-            """,
-            reply_markup=await kb.get_main_kb(),
-            parse_mode='html',
-        )
+        await message.answer(f'id фотки: {file_id_s}')
+    except Exception as e:
+        logger.error(f'Error in photo handler: {e}')
+        await message.answer('❌ При обработке фото произошла ошибка. Попробуйте ещё раз!')
 
 
-@router_user.message(F.text == '🎉 Начнём 🎉')
+@router_user.message(F.text.in_(['🎉 Начнём 🎉', '🔀Изменить подборку']))
 async def get_year(message: Message, state: FSMContext) -> None:
     if message.from_user is None or message.from_user.id is None:
         return
@@ -115,53 +140,89 @@ async def get_year(message: Message, state: FSMContext) -> None:
     await state.set_data(
         {
             'year': user_data.get('year'),
+            'gender': user_data.get('gender'),
             'status': user_data.get('status'),
             'district': user_data.get('district'),
             'interests': user_data.get('interests', []),
+            'shown_events': user_data.get('shown_events', []),
         }
     )
 
+    await state.update_data(shown_events=[])
     await state.set_state(UserData.year)
     await message.answer(
         """
 <b>Давай чуть ближе познакомимся.</b>
-Сколько тебе лет? Ответь на вопрос сообщением. 
-Это нужно, чтобы подкинуть тебе подходящие форматы — у нас для каждого возраста свои точки притяжения.
+Сколько тебе лет? 
+Это нужно, чтобы подкинуть тебе подходящие форматы.
         """,
         parse_mode='html',
     )
-    # await asyncio.sleep(10)
-    # await safe_delete_message(bot_message)
 
 
 @router_user.message(UserData.year)
 async def get_status(message: Message, state: FSMContext) -> None:
     if message.text is None or message.text.isalpha():
         await message.answer('❌ Пожалуйста, введите число цифрами')
-        # await asyncio.sleep(5)
-        # await safe_delete_message(bot_message)
+        return
+
+    if not message.text.isdigit() and not message.text.isnumeric():
+        await message.answer('❌ Пожалуйста, введите число цифрами')
         return
 
     age = int(message.text)
 
     if age < 18 or age > 60:
         await message.answer('❌ Пожалуйста, введите возраст от 18 до 60 лет')
-        # await asyncio.sleep(5)
-        # await safe_delete_message(bot_message)
         return
 
-    await state.update_data(year=age)
-    await state.set_state(UserData.status)
+    data = await state.update_data(year=age)
+    if not data.get('year'):
+        await message.answer('❌ Пожалуйста, укажите свой возраст', show_alert=True)
+        return
+    await state.set_state(UserData.gender)
 
     if isinstance(message, Message):
         await message.answer(
             """
-<b>Спасибо! Чтобы лучше подобрать для тебя формат, подскажи, пожалуйста:</b>
-Какой у тебя семейный статус?
+<b>Теперь укажи пол:</b>
             """,
-            reply_markup=await kb.marital_status_kb(state=state),
+            reply_markup=await kb.gender_kb(state=state),
             parse_mode='html',
         )
+
+
+@router_user.callback_query(F.data.startswith('gender_'))
+async def get_gender(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.data is None or callback.message is None:
+        return
+
+    if isinstance(callback.message, Message):
+        try:
+            gender = callback.data.split('_')[1]
+            data = await state.get_data()
+
+            current_gender = data.get('gender')
+            new_gender = None if current_gender == gender else gender
+            await state.update_data(gender=new_gender)
+
+            await callback.message.edit_reply_markup(reply_markup=await kb.gender_kb(state=state))
+
+            await callback.answer(f'Пол: {gender if new_gender else "сброшен"}')
+
+            if new_gender:
+                await state.set_state(UserData.status)
+                await callback.message.answer(
+                    """
+<b>Спасибо! Чтобы лучше подобрать для тебя формат, подскажи:</b>
+Какой у тебя семейный статус?
+                    """,
+                    reply_markup=await kb.marital_status_kb(state=state),
+                    parse_mode='html',
+                )
+        except Exception as e:
+            logger.error(e)
+            await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
 
 
 @router_user.callback_query(F.data.startswith('status_'))
@@ -182,15 +243,12 @@ async def get_district(callback: CallbackQuery, state: FSMContext) -> None:
 
             await callback.answer(f'Статус: {status_marital if new_status else "сброшен"}')
 
-            # await safe_delete_message(callback.message)
-
             if new_status:
                 await state.set_state(UserData.district)
                 await callback.message.answer(
                     """
 <b>Отлично! Теперь давай уточним локацию:</b>
 В каком округе Москвы ты живешь?
-(Выбери из списка или укажи свой)
                     """,
                     reply_markup=await kb.district_kb(state=state),
                     parse_mode='html',
@@ -217,14 +275,12 @@ async def get_interests(callback: CallbackQuery, state: FSMContext) -> None:
             await callback.message.edit_reply_markup(reply_markup=await kb.district_kb(state=state))
             await callback.answer(f'Район: {district_name if new_district else "сброшет"}')
 
-            # await safe_delete_message(callback.message)
-
             if new_district:
                 await state.set_state(UserData.interests)
                 await callback.message.answer(
                     """
-<b>Почти готово! Последний шаг — расскажи, что тебе интересно.</b>
-Выбери от 3 вариантов, которые тебе откликаются:
+<b>Последний шаг — расскажи, что тебе интересно.</b>
+Выбери от 3 вариантов, которые откликаются:
                     """,
                     reply_markup=await kb.interests_kb(state=state),
                     parse_mode='html',
@@ -290,7 +346,7 @@ async def save_data(callback: CallbackQuery, state: FSMContext, bot: Bot) -> Non
         data = await state.get_data()
         logger.info(f'Current state data: {data}')
 
-        required_fields = ['year', 'status', 'district']
+        required_fields = ['year', 'gender', 'status', 'district']
         if not all(field in data for field in required_fields):
             logger.error(f'Missing required fields: {required_fields}')
             await callback.answer('❌ Нажмите снова кнопку\n\t"🎉 Начнём 🎉"!', show_alert=True)
@@ -307,6 +363,7 @@ async def save_data(callback: CallbackQuery, state: FSMContext, bot: Bot) -> Non
             await req.set_user_data_save(
                 tg_id=callback.from_user.id,
                 year=data['year'],
+                gender=data['gender'],
                 status=data['status'],
                 district=data['district'],
                 interests=data['interests'],
@@ -319,7 +376,8 @@ async def save_data(callback: CallbackQuery, state: FSMContext, bot: Bot) -> Non
 
         await callback.answer('✅ Фильтр сохранен')
 
-        # await safe_delete_message(callback.message)
+        ia_user_data = await req.get_user(callback.from_user.id)
+        logger.info(f'IA user data: {ia_user_data}')
 
         if isinstance(callback.message, Message):
             message = await callback.message.answer(
@@ -327,16 +385,23 @@ async def save_data(callback: CallbackQuery, state: FSMContext, bot: Bot) -> Non
 <b>Класс, спасибо!</b>
 Теперь мы знаем тебя чуть лучше — самое время подобрать что-то подходящее.
 
-Не просто событие, а твоё. Где можно быть собой, встретиться по-настоящему и, возможно, удивиться, как это было нужно.
-
 Готовим подборку. Это займёт какое-то время.
             """,
+                reply_markup=await kb.get_main_kb(user_data_exists=True),
                 parse_mode='html',
             )
             try:
-                events = await req.get_event_for_user(data['year'], data['status'])
+                user = await req.get_user(callback.from_user.id)
+                if not user:
+                    raise ValueError('User not found')
+
+                events = await req.get_recommended_events(tg_id=callback.from_user.id, limit=3)
                 logger.info(f'Found events: {events}')
-                await send_events_list(message, callback, events, bot)
+
+                new_shown_events = [event.id for event in events]
+                await state.update_data(shown_events=new_shown_events)
+
+                await send_events_list(message, events, bot, callback)
             except Exception as e:
                 logger.error(f'Error in send_events_list: {e}', exc_info=True)
                 await callback.answer('❌ Произошла ошибка при отправке событий. Попробуйте ещё раз.')
@@ -345,7 +410,10 @@ async def save_data(callback: CallbackQuery, state: FSMContext, bot: Bot) -> Non
         logger.error(f'Error in status_save: {e}', exc_info=True)
         await callback.answer('❌ Произошла ошибка. Попробуйте ещё раз.')
     finally:
+        data = await state.get_data()
+        shown_events = data.get('shown_events', [])
         await state.clear()
+        await state.update_data(shown_events=shown_events)
 
 
 @router_user.message(F.text == 'Меню 🗄️')
@@ -362,19 +430,68 @@ async def show_points_user(callback: CallbackQuery) -> None:
     if callback.data is None:
         await callback.answer('Произошла ошибка.')
         return
-
     points = await req.get_user_points(callback.from_user.id)
+
     if isinstance(callback.message, Message):
         await callback.message.answer(
             f"""
-<b>У вас 🔖 {points} баллов!</b>
+Твой баланс: {points} баллов! 🎉
 
-Посещайте мероприятия, чтобы зарабатывать больше баллов и открывать новые возможности.
-Чем активнее вы участвуете, тем больше баллов начисляется на ваш счет.
+Каждый балл — это сэкономленные деньги! Копи больше и оплачивай до 50% стоимости любого билета в Weekender.
 
-Вы можете тратить баллы на посещение новых мероприятий. Не упустите шанс увеличить свой баланс.
-Следите за обновлениями, чтобы не пропустить выгодные предложения!
-            """,
-            parse_mode='html',
+Совет: активничай в чате @weekender_chat, зови друзей и делись впечатлениями — баллы сами прибегут к тебе! 🚀
+
+Для конвертации баллов напиши нам в поддержку @weekender_main
+            """
         )
-        await callback.answer()
+
+    file_id = 'AgACAgIAAxkBAAINjmgvg4lmVL30AQoeuUUxbCOwJDXzAAKm8DEbEbh4SdXXtBL6heUeAQADAgADeQADNgQ'
+
+    if isinstance(callback.message, Message):
+        try:
+            await callback.message.answer_photo(
+                file_id,
+            )
+
+            await callback.message.answer(
+                """
+    🎯 Механика обмена баллов
+1. 1 балл = 1 руб.
+2. Баллами можно оплачивать до 50% от стоимости мероприятия;
+3. Баллы сгорают через 3 месяца.
+                """,
+                parse_mode='html',
+            )
+            await callback.answer()
+
+        except Exception as e:
+            logger.error(f'Error in show_points_user: {e}', exc_info=True)
+            await callback.answer('❌ Произошла ошибка. Попробуйте ещё раз.')
+
+
+@router_user.message(F.text == '🔄️Повторить подборку')
+async def repeat_recommendations(message: Message, state: FSMContext, bot: Bot) -> None:
+    if message.from_user is None:
+        return
+    data = await state.get_data()
+    shown_events = data.get('shown_events', [])  # Список уже показанных ID
+
+    try:
+        # Получаем рекомендации, исключая показанные
+        events = await req.get_recommended_events_new(tg_id=message.from_user.id, limit=3, exclude_ids=shown_events)
+
+        if not events:
+            await message.answer("""
+            ✨ Вы уже посмотрели все доступные мероприятия!
+    Попробуйте изменить фильтры или загляните позже🕑. ✨
+            """)
+            return
+
+        # Обновляем список показанных ID
+        new_shown_events = shown_events + [event.id for event in events]
+        await state.update_data(shown_events=new_shown_events)
+
+        await send_events_list(message, events, bot)
+    except Exception as e:
+        logger.error(f'Error in repeat_recommendations: {e}', exc_info=True)
+        await message.answer('❌ Произошла ошибка. Попробуйте позже.')

@@ -13,4 +13,3 @@ __pycache__/
 *.log
 *.sqlite3
 *.md
-alembic.ini
