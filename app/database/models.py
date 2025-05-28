@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -79,6 +79,10 @@ class Option(Base):
         back_populates='option',
         passive_deletes=True,
     )
+    events: Mapped[list['EventInterest']] = relationship(
+        back_populates='interest',
+        passive_deletes=True,
+    )
 
 
 class UserOption(Base):
@@ -96,9 +100,28 @@ class Event(Base):
     __tablename__ = 'events'
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    gender: Mapped[str] = mapped_column(String(20), nullable=True)
     year: Mapped[str] = mapped_column(String(20), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=True)
     url: Mapped[str] = mapped_column(String(150), nullable=True)
+    description: Mapped[str] = mapped_column(Text, nullable=True)
+
+    interests: Mapped[list['EventInterest']] = relationship(
+        back_populates='event',
+        cascade='all, delete-orphan',
+        lazy='selectin',
+        passive_deletes=True,
+    )
+
+
+class EventInterest(Base):
+    __tablename__ = 'events_interests'
+
+    event_id: Mapped[int] = mapped_column(ForeignKey('events.id', ondelete='CASCADE'), index=True, primary_key=True)
+    interest_id: Mapped[int] = mapped_column(ForeignKey('options.id', ondelete='CASCADE'), index=True, primary_key=True)
+
+    event: Mapped['Event'] = relationship(back_populates='interests', lazy='joined')
+    interest: Mapped['Option'] = relationship(back_populates='events', lazy='joined')
 
 
 async def create_db_and_tables() -> None:
