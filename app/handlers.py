@@ -445,7 +445,8 @@ async def show_points_user(callback: CallbackQuery) -> None:
             """
         )
 
-    file_id = 'AgACAgIAAxkBAAINjmgvg4lmVL30AQoeuUUxbCOwJDXzAAKm8DEbEbh4SdXXtBL6heUeAQADAgADeQADNgQ'
+    # file_id_local = 'AgACAgIAAxkBAAINjmgvg4lmVL30AQoeuUUxbCOwJDXzAAKm8DEbEbh4SdXXtBL6heUeAQADAgADeQADNgQ'
+    file_id = 'AgACAgIAAxkBAAIEvWg28Q7DqYKRGRYI3lJLei_8NnXvAAKN8zEb2I25SZGgKqeEEXsZAQADAgADeQADNgQ'
 
     if isinstance(callback.message, Message):
         try:
