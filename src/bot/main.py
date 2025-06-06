@@ -7,9 +7,8 @@ from pathlib import Path
 from aiogram import Bot, Dispatcher
 from dotenv import load_dotenv
 
-from app.admin import router_admin
-from app.database.models import create_db_and_tables
-from app.handlers import router_user
+from src.bot.db.models import create_db_and_tables
+from src.bot.handlers.user import router_user
 
 
 logging.basicConfig(level=logging.INFO)
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
-    project_root = Path(__file__).parent.parent
+    project_root = Path(__file__).parent.parent.parent
     env_path = project_root / '.env.local'
 
     if env_path.exists():
@@ -37,7 +36,6 @@ async def main() -> None:
     bot = Bot(token=TOKEN)
     dp = Dispatcher()
     dp.include_router(router_user)
-    dp.include_router(router_admin)
     await dp.start_polling(bot)
 
 
