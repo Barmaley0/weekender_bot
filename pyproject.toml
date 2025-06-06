@@ -14,6 +14,12 @@ select = [
   "I",   # isort
   "B",   # flake8-bugbear
   "UP",  # pyupgrade (автоматическое обновление синтаксиса)
+  "E301", # Требуется 1 пустая строка между методами
+  "E302", # Требуется 2 пустых строки между функциями
+  "E303", # Слишком много пустых строк
+  "E304", # Пустые строки после декораторов
+  "E305", # Требуется 2 пустых строки после конца функции/класса
+  "E306", # Требуется 1 пустая строка перед вложенной функцией
 ]
 ignore = ["W291", "E501"]
 fixable = ["ALL"]
@@ -33,6 +39,18 @@ indent-style = "space"
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["frozen_model"]
 
-[tool.mypy]
-ignore_missing_imports = true
-python_version = "3.11"
+# [tool.mypy]
+# python_version = "3.11"
+# warn_return_any = true
+# warn_unused_configs = true
+# disallow_untyped_defs = true
+# check_untyped_defs = true
+# ignore_missing_imports = true
+# no_implicit_optional = true
+# strict_equality = true
+# show_error_codes = true
+# warn_redundant_casts = true
+# warn_unused_ignores = true
+# warn_no_return = true
+# disallow_any_generics = true
+# disallow_subclassing_any = true

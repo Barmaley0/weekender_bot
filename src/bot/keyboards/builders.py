@@ -2,7 +2,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
-from app.database.requests import (
+from src.bot.db.repositories.options_repository import (
     get_all_districts,
     get_all_gender,
     get_all_interests,
