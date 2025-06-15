@@ -111,6 +111,7 @@ async def repeat_recommendations(message: Message, state: FSMContext, bot: Bot) 
         return
     data = await state.get_data()
     shown_events = data.get('shown_events', [])  # Список уже показанных ID
+    logger.info(f'Shown events: {shown_events}')
 
     try:
         # Получаем рекомендации, исключая показанные
@@ -121,13 +122,14 @@ async def repeat_recommendations(message: Message, state: FSMContext, bot: Bot) 
         if not events:
             await message.answer("""
             ✨ Вы уже посмотрели все доступные мероприятия!
-    Попробуйте изменить фильтры или загляните позже🕑. ✨
+        Попробуйте изменить фильтры или загляните позже. ✨
             """)
             return
 
         # Обновляем список показанных ID
         new_shown_events = shown_events + [event.id for event in events]
         await state.update_data(shown_events=new_shown_events)
+        logger.info(f'Updated shown events: {new_shown_events}')
 
         await send_events_list(message, events, bot)
     except Exception as e:

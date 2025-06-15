@@ -57,7 +57,7 @@ PyYAML==6.0.2
 requests==2.32.3
 requests-oauthlib==2.0.0
 rsa==4.9.1
-ruff==0.11.6
+ruff==0.11.13
 SQLAlchemy==2.0.40
 types-pytz==2025.2.0.20250326
 typing-inspection==0.4.0

@@ -12,7 +12,7 @@ import src.bot.db.repositories.user_repository as req_user
 import src.bot.keyboards.builders as kb
 
 from src.bot.fsm.user_states import UserData
-from src.bot.utils.helpers import send_events_list
+from src.bot.utils.helpers import data_get_update, send_events_list
 
 
 logging.basicConfig(level=logging.INFO)
@@ -23,16 +23,15 @@ router_user = Router()
 
 @router_user.callback_query(F.data.startswith('gender_'))
 async def get_gender(callback: CallbackQuery, state: FSMContext) -> None:
-    if callback.data is None or callback.message is None:
-        return
-
     if isinstance(callback.message, Message):
         try:
-            gender = callback.data.split('_')[1]
-            data = await state.get_data()
+            result = await data_get_update(callback, state, 'gender')
 
-            current_gender = data.get('gender')
-            new_gender = None if current_gender == gender else gender
+            if result is None:
+                return
+
+            gender, new_gender = result
+
             await state.update_data(gender=new_gender)
 
             await callback.message.edit_reply_markup(reply_markup=await kb.gender_kb(state=state))
@@ -56,16 +55,15 @@ async def get_gender(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router_user.callback_query(F.data.startswith('status_'))
 async def get_district(callback: CallbackQuery, state: FSMContext) -> None:
-    if callback.data is None or callback.message is None:
-        return
-
     if isinstance(callback.message, Message):
         try:
-            status_marital = callback.data.split('_')[1]
-            data = await state.get_data()
+            result = await data_get_update(callback, state, 'status')
 
-            current_status = data.get('status')
-            new_status = None if current_status == status_marital else status_marital
+            if result is None:
+                return
+
+            status_marital, new_status = result
+
             await state.update_data(status=new_status)
 
             await callback.message.edit_reply_markup(reply_markup=await kb.marital_status_kb(state=state))
@@ -89,19 +87,19 @@ async def get_district(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router_user.callback_query(F.data.startswith('district_'))
 async def get_interests(callback: CallbackQuery, state: FSMContext) -> None:
-    if callback.data is None or callback.message is None:
-        return
-
     if isinstance(callback.message, Message):
         try:
-            district_name = callback.data.split('_')[1]
-            data = await state.get_data()
+            result = await data_get_update(callback, state, 'district')
 
-            current_district = data.get('district')
-            new_district = None if current_district == district_name else district_name
+            if result is None:
+                return
+
+            district_name, new_district = result
+
             await state.update_data(district=new_district)
 
             await callback.message.edit_reply_markup(reply_markup=await kb.district_kb(state=state))
+
             await callback.answer(f'Район: {district_name if new_district else "сброшет"}')
 
             if new_district:
@@ -243,6 +241,7 @@ async def save_data(callback: CallbackQuery, state: FSMContext, bot: Bot) -> Non
         shown_events = data.get('shown_events', [])
         await state.clear()
         await state.update_data(shown_events=shown_events)
+        logger.info(f'Updated shown events in state save: {shown_events}')
 
 
 @router_user.callback_query(F.data.startswith('check_'))
