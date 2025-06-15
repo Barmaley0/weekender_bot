@@ -5,6 +5,25 @@ build-backend = "setuptools.build_meta"
 [tool.ruff]
 line-length = 120
 indent-width = 4
+exclude = [
+  "migrations",
+  ".git",
+  ".git-rewrite",
+  ".mypy_cache",
+  ".pyenv",
+  ".pytest_cache",
+  ".pytype",
+  ".ruff_cache",
+  ".venv",
+  "__pypackages__",
+  "_build",
+  "buck-out",
+  "build",
+  "node_modules",
+  "site-packages",
+  "venv",
+  "tests",
+]
 
 [tool.ruff.lint]
 select = [
@@ -35,22 +54,17 @@ lines-between-types = 1
 [tool.ruff.format]
 quote-style = "single"
 indent-style = "space"
+docstring-code-format = true
+docstring-code-line-length = 80
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["frozen_model"]
 
-# [tool.mypy]
-# python_version = "3.11"
-# warn_return_any = true
-# warn_unused_configs = true
-# disallow_untyped_defs = true
-# check_untyped_defs = true
-# ignore_missing_imports = true
-# no_implicit_optional = true
-# strict_equality = true
-# show_error_codes = true
-# warn_redundant_casts = true
-# warn_unused_ignores = true
-# warn_no_return = true
-# disallow_any_generics = true
-# disallow_subclassing_any = true
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+warn_redundant_casts = true
+no_implicit_optional = true
+strict_optional = true

@@ -3,9 +3,10 @@ import logging
 
 from typing import Optional
 
-from aiogram import Bot, Router
+from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Filter
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, MaybeInaccessibleMessage, Message
 
 import src.bot.db.repositories.admin_repository as req_admin
@@ -14,9 +15,6 @@ import src.bot.db.repositories.admin_repository as req_admin
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-router_user = Router()
-router_admin = Router()
-
 
 # Проверка пользователя на администратора
 class AdminFilter(Filter):
@@ -24,6 +22,21 @@ class AdminFilter(Filter):
         if message.from_user is not None:
             return await req_admin.is_admin(message.from_user.id)
         return False
+
+
+# Получаем значение обрабатываем и возвращаем старое и новое значение
+async def data_get_update(callback: CallbackQuery, state: FSMContext, key: str) -> tuple[str, Optional[str]] | None:
+    if callback.data is None:
+        await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
+        return None
+
+    value = callback.data.split('_')[1]
+    data = await state.get_data()
+
+    current_value = data.get(key)
+    new_value = None if current_value == value else value
+
+    return value, new_value
 
 
 # Удаление сообщения
