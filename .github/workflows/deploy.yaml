@@ -106,7 +106,17 @@ jobs:
           docker-compose build --no-cache bot
           docker-compose up -d --force-recreate bot
 
-          # Умная проверка необходимости миграций
+          # Надежная проверка существования таблицы alembic_version
+          echo "🔍 Проверка существования таблицы alembic_version..."
+          if ! docker-compose exec db sh -c 'PGPASSWORD=$POSTGRES_PASSWORD psql -h db -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT 1 FROM alembic_version LIMIT 1"' &>/dev/null; then
+            echo "⚙️ Таблица версий не найдена, инициализируем..."
+            docker-compose exec bot alembic stamp head || {
+              echo "❌ Ошибка создания таблицы версий"
+              exit 1
+            }
+          fi
+
+          # Обновленная проверка необходимости миграций
           echo "🔍 Проверка необходимости применения миграций..."
           MIGRATION_NEEDED=$(docker-compose exec bot sh -c "cd /app && alembic current | grep -c '(head)'" | tr -d '[:space:]')
 
