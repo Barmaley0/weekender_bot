@@ -31,11 +31,13 @@ async def main() -> None:
     if TOKEN is None:
         raise ValueError('BOT_TOKEN is not set')
 
+    logger.info('Connecting to database...')
     await create_db_and_tables()
 
     bot = Bot(token=TOKEN)
     dp = Dispatcher()
     dp.include_router(router_user)
+    logger.info('Application startup complete')
     await dp.start_polling(bot)
 
 
@@ -43,4 +45,4 @@ if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info('Bot stopped')
+        logger.info('Application shutdown complete')
