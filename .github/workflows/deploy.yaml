@@ -5,8 +5,6 @@ on:
   push:
     branches: [main]
 
-if: "!contains(github.event.head_commit.message, '[skip ci]') || !contains(github.event.head_commit.message, '[no deploy]')"
-
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -40,6 +38,7 @@ jobs:
 
   deploy:
     runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]') || !contains(github.event.head_commit.message, '[no deploy]')"
     needs: [lint, types]
     steps:
       - name: Checkout code
