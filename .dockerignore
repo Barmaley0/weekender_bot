@@ -1,3 +1,5 @@
+# .dockerignore
+
 # Стандартные игноры Python
 __pycache__/
 *.py[cod]
@@ -14,6 +16,7 @@ venv.bak/
 # Файлы разработки и настройки
 .git/
 .github/
+.pre-commit-config.yaml
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
@@ -21,6 +24,8 @@ venv.bak/
 .vscode/
 *.swp
 *.swo
+pyproject.toml
+tests/
 
 # Логи и базы данных
 *.log
@@ -45,3 +50,6 @@ docker-compose.local.yaml
 # Документация
 docs/_build/
 site/
+README.md
+*.md
+LICENSE.txt

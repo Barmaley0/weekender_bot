@@ -1,10 +1,8 @@
 ---
 name: Deploy Bot
-
 on:
   push:
     branches: [main]
-
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -20,7 +18,6 @@ jobs:
           pip install -r requirements.txt
       - name: Run Ruff linter
         run: ruff check .
-
   types:
     runs-on: ubuntu-latest
     steps:
@@ -35,15 +32,14 @@ jobs:
           pip install types-pytz
       - name: Run Mypy
         run: mypy --ignore-missing-imports --exclude migrations .
-
   deploy:
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, '[skip ci]') || !contains(github.event.head_commit.message, '[no deploy]')"
+    if: "!contains(github.event.head_commit.message, '[skip ci]') || !contains(github.event.head_commit.message,\
+      \ '[no deploy]')"
     needs: [lint, types]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -51,7 +47,6 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-
       - name: Verify SSH connection
         run: |
           ssh -o BatchMode=yes \
@@ -65,9 +60,8 @@ jobs:
             echo "3. Проверьте логи на сервере: sudo tail -f /var/log/auth.log"
             exit 1
           }
-
       - name: Deploy application
-        run: |
+        run: |-
           ssh -T -p ${{ secrets.SSH_PORT }} \
               -i ~/.ssh/id_ed25519 \
               ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
@@ -79,7 +73,6 @@ jobs:
           export POSTGRES_PASSWORD='${{ secrets.POSTGRES_PASSWORD }}'
           export POSTGRES_DB='${{ secrets.POSTGRES_DB }}'
           export DATABASE_URL="postgresql+asyncpg://$POSTGRES_USER:$POSTGRES_PASSWORD@db:5432/$POSTGRES_DB"
-
           echo "🚀 Начало процесса деплоя..."
           cd ~/weekender_bot || { echo "❌ Ошибка перехода в директорию проекта"; exit 1; }
 
@@ -109,28 +102,33 @@ jobs:
 
           # Улучшенная проверка миграций с таймаутом
           echo "🔍 Проверка состояния миграций..."
-          if ! timeout 15s docker-compose exec db sh -c 'PGPASSWORD=$POSTGRES_PASSWORD psql -h db -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT 1 FROM alembic_version LIMIT 1"' &>/dev/null; then
+          if timeout 15s docker-compose exec db sh -c 'PGPASSWORD=$POSTGRES_PASSWORD psql -h db -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT 1 FROM alembic_version LIMIT 1"' &>/dev/null; then
+            echo "⚙️ Таблица версий найдена, проверяем миграции..."
+
+            # Получаем последнюю применённую версию миграций DB
+            DB_VERSION=$(timeout 15s docker-compose exec db sh -c "PGPASSWORD=$POSTGRES_PASSWORD psql -h db -U $POSTGRES_USER -d $POSTGRES_DB -t -c 'SELECT version_num FROM alembic_version LIMIT 1' | tr -d '[:space:]'")
+
+            # Получаем последнюю доступную версию миграций
+            HEAD_VERSION=$(timeout 15s docker-compose exec bot sh -c "cd /app && alembic heads | awk '{print \$1}' | tr -d '[:space:]'")
+
+            if [ "$DB_VERSION" != "$HEAD_VERSION" ]; then
+              echo "⛔ Обнаружены неприменённые миграции (БД: $DB_VERSION, доступно: $HEAD_VERSION)..."
+              echo "🔄 Применение миграций..."
+              timeout 60s docker-compose exec bot sh -c "cd /app && alembic upgrade head" || {
+                echo "❌ Ошибка миграций"
+                docker-compose logs db
+                exit 1
+              }
+            else
+              echo "✅ Миграции актуальны"
+            fi
+          else
             echo "⚙️ Таблица версий не найдена, инициализируем..."
             timeout 30s docker-compose exec bot alembic stamp head || {
               echo "❌ Ошибка инициализации"
               docker-compose logs db
               exit 1
             }
-          fi
-
-          # Проверка необходимости миграций
-          echo "🔍 Проверка неприменённых миграций..."
-          MIGRATION_NEEDED=$(timeout 15s docker-compose exec bot sh -c "cd /app && alembic current | grep -c '(head)'" | tr -d '[:space:]')
-
-          if [ "$MIGRATION_NEEDED" -eq 0 ]; then
-            echo "🔄 Применение миграций..."
-            timeout 60s docker-compose exec bot sh -c "cd /app && alembic upgrade head" || {
-              echo "❌ Ошибка миграций"
-              docker-compose logs db
-              exit 1
-            }
-          else
-            echo "✅ Миграции актуальны"
           fi
 
           # Финальная проверка
