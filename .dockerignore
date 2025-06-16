@@ -1,4 +1,4 @@
-# .dockerignore
+.dockerignore
 
 # Стандартные игноры Python
 __pycache__/
@@ -16,6 +16,7 @@ venv.bak/
 # Файлы разработки и настройки
 .git/
 .github/
+.gitignore/
 .pre-commit-config.yaml
 .mypy_cache/
 .pytest_cache/
@@ -26,6 +27,7 @@ venv.bak/
 *.swo
 pyproject.toml
 tests/
+Dockerfile
 
 # Логи и базы данных
 *.log
