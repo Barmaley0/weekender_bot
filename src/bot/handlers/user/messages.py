@@ -153,7 +153,7 @@ async def get_about(message: Message, state: FSMContext) -> None:
         )
 
 
-@router_user.message(F.text == 'Чаты')
+@router_user.message(F.text == 'Чат')
 async def show_chats(message: Message) -> None:
     await message.answer(
         '<b>➖➖  Меню чатов ➖➖</b>',
