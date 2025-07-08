@@ -3,10 +3,12 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardBu
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 from src.bot.db.repositories.options_repository import (
+    get_all_age_range,
     get_all_districts,
     get_all_gender,
     get_all_interests,
     get_all_marital_status,
+    get_all_target,
 )
 
 
@@ -15,16 +17,17 @@ async def get_main_kb(user_data_exists: bool) -> ReplyKeyboardMarkup:
 
     if user_data_exists:
         main_menu.add(
-            KeyboardButton(text='🔄️Повторить подборку'),
-            KeyboardButton(text='🔀Изменить подборку'),
+            KeyboardButton(text='Резиденты'),
+            KeyboardButton(text='Мероприятия'),
+            KeyboardButton(text='Баллы'),
+            KeyboardButton(text='Чат'),
         )
     else:
         main_menu.add(
             KeyboardButton(text='🎉 Начнём 🎉'),
         )
 
-    main_menu.add(KeyboardButton(text='Меню 🗄️'))
-    main_menu.adjust(2 if not user_data_exists else 2, 1)
+    main_menu.adjust(1 if not user_data_exists else 2)
 
     return main_menu.as_markup(
         resize_keyboard=True,
@@ -32,15 +35,97 @@ async def get_main_kb(user_data_exists: bool) -> ReplyKeyboardMarkup:
     )
 
 
-async def get_menu_kb() -> InlineKeyboardMarkup:
+async def get_residents_menu_kb() -> InlineKeyboardMarkup:
     menu_inline = InlineKeyboardBuilder()
     menu_inline.add(
-        InlineKeyboardButton(text='Проверить баллы', callback_data='check_'),
-        InlineKeyboardButton(text='Персональный помощник', url='https://t.me/weekender_main'),
-        InlineKeyboardButton(text='Чат поиска компании', url='https://t.me/weekender_chat'),
+        InlineKeyboardButton(text='Посмотреть свой профиль', callback_data='profile'),
+        InlineKeyboardButton(text='Изменить профиль', callback_data='edit_profile'),
+        InlineKeyboardButton(text='Посмотреть пользователей чата', callback_data='find_user'),
+        InlineKeyboardButton(text='Найти людей', callback_data='find_people'),
     )
+
     menu_inline.adjust(1)
     return menu_inline.as_markup()
+
+
+async def get_chats_kb() -> InlineKeyboardMarkup:
+    menu_inline = InlineKeyboardBuilder()
+    menu_inline.add(
+        InlineKeyboardButton(text='Чаты', url='https://t.me/+hAwst9wJ-4kzNTdi'),
+    )
+
+    menu_inline.adjust(1)
+    return menu_inline.as_markup()
+
+
+async def show_more_people_kb() -> InlineKeyboardMarkup:
+    menu_inline = InlineKeyboardBuilder()
+    menu_inline.add(
+        InlineKeyboardButton(text='Показать ещё', callback_data='show_more_people'),
+    )
+
+    menu_inline.adjust(1)
+    return menu_inline.as_markup()
+
+
+async def send_message_user_kb(tg_id: int, username: str | None) -> InlineKeyboardMarkup:
+    menu_inline = InlineKeyboardBuilder()
+
+    if username:
+        menu_inline.add(
+            InlineKeyboardButton(
+                text='✉️ Написать',
+                url=f'https://t.me/{username}',
+            )
+        )
+    else:
+        menu_inline.add(
+            InlineKeyboardButton(
+                text='✉️ Написать',
+                url=f'https://t.me/{tg_id}',
+            )
+        )
+
+    menu_inline.adjust(1)
+    return menu_inline.as_markup()
+
+
+async def get_events_kb() -> InlineKeyboardMarkup:
+    menu_inline = InlineKeyboardBuilder()
+    menu_inline.add(
+        InlineKeyboardButton(text='Подборка', callback_data='events'),
+        InlineKeyboardButton(text='Изменить профиль', callback_data='edit_events'),
+        InlineKeyboardButton(text='Персональный помощник', url='https://t.me/weekender_main'),
+    )
+
+    menu_inline.adjust(1)
+    return menu_inline.as_markup()
+
+
+async def age_range_kb(state: FSMContext) -> InlineKeyboardMarkup:
+    data = await state.get_data()
+    current_age_range = data.get('age_ranges', [])
+    age_range = await get_all_age_range()
+
+    keyboard = InlineKeyboardBuilder()
+    for age in sorted(age_range, key=lambda x: x.id):
+        selected = age.name in current_age_range
+        emoji = '✅' if selected else ''
+        button = InlineKeyboardButton(
+            text=f'{emoji} {age.name}',
+            callback_data=f'age_range_{age.name}',
+        )
+        keyboard.add(button)
+
+    keyboard.row(
+        InlineKeyboardButton(
+            text='🎯 Готово',
+            callback_data='age_done',
+        )
+    )
+
+    keyboard.adjust(2)
+    return keyboard.as_markup()
 
 
 async def gender_kb(state: FSMContext) -> InlineKeyboardMarkup:
@@ -58,7 +143,7 @@ async def gender_kb(state: FSMContext) -> InlineKeyboardMarkup:
         )
         keyboard.add(button)
 
-    keyboard.adjust(1)
+    keyboard.adjust(2)
     return keyboard.as_markup()
 
 
@@ -81,7 +166,26 @@ async def marital_status_kb(state: FSMContext) -> InlineKeyboardMarkup:
         )
         keyboard.add(button)
 
-    keyboard.adjust(1)
+    keyboard.adjust(2)
+    return keyboard.as_markup()
+
+
+async def target_kb(state: FSMContext) -> InlineKeyboardMarkup:
+    data = await state.get_data()
+    current_target = data.get('target')
+    all_all_target = await get_all_target()
+
+    keyboard = InlineKeyboardBuilder()
+    for terget in sorted(all_all_target, key=lambda x: x.id):
+        selected = terget.name == current_target
+        emoji = '✅' if selected else ''
+        button = InlineKeyboardButton(
+            text=f'{emoji} {terget.name}',
+            callback_data=f'target_{terget.name}',
+        )
+        keyboard.add(button)
+
+    keyboard.adjust(2)
     return keyboard.as_markup()
 
 

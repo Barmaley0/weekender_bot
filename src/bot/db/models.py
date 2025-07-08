@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import ARRAY, BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.bot.db.connection import Base, engine
@@ -22,15 +22,32 @@ class User(Base):
     date_update: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=True)
     points: Mapped[int] = mapped_column(Integer(), default=100, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean(), default=False, nullable=False)
+    profession: Mapped[str] = mapped_column(String(50), nullable=True)
+    about: Mapped[str] = mapped_column(Text, nullable=True)
 
     options: Mapped[list['UserOption']] = relationship(
         back_populates='user',
         cascade='save-update, merge',
         passive_deletes=True,
     )
+    photo_profile: Mapped[list['PhotoProfile']] = relationship(
+        back_populates='user',
+        cascade='all, delete-orphan',
+        passive_deletes=True,
+    )
 
     def __repr__(self) -> str:
         return f'User id: {self.id}, tg_id: {self.tg_id}'
+
+
+class PhotoProfile(Base):
+    __tablename__ = 'photo_profile'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    profile_photo_ids: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=True)
+
+    user: Mapped['User'] = relationship(back_populates='photo_profile', lazy='joined')
 
 
 class OptionCategory(Base):

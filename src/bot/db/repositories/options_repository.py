@@ -33,6 +33,15 @@ async def get_all_marital_status(session: AsyncSession) -> Sequence[Option]:
 
 
 @connect_db
+async def get_all_target(session: AsyncSession) -> Sequence[Option]:
+    target = await session.scalars(
+        select(Option).join(OptionCategory).where(OptionCategory.name == 'target').order_by(Option.id)
+    )
+
+    return target.all()
+
+
+@connect_db
 async def get_all_districts(session: AsyncSession) -> Sequence[Option]:
     districts = await session.scalars(
         select(Option).join(OptionCategory).where(OptionCategory.name == 'district').order_by(Option.id)
@@ -48,3 +57,12 @@ async def get_all_interests(session: AsyncSession) -> Sequence[Option]:
     )
 
     return interests.all()
+
+
+@connect_db
+async def get_all_age_range(session: AsyncSession) -> Sequence[Option]:
+    age_range = await session.scalars(
+        select(Option).join(OptionCategory).where(OptionCategory.name == 'age_ranges').order_by(Option.id)
+    )
+
+    return age_range.all()

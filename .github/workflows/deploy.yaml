@@ -104,29 +104,40 @@ jobs:
 
           # Улучшенная проверка миграций с таймаутом
           echo "🔍 Проверка состояния миграций..."
-          if timeout 15s docker-compose exec db sh -c 'PGPASSWORD=$POSTGRES_PASSWORD psql -h db -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT 1 FROM alembic_version LIMIT 1"' &>/dev/null; then
+          if timeout 30s docker-compose exec db sh -c 'PGPASSWORD=$POSTGRES_PASSWORD psql -h db -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT 1 FROM alembic_version LIMIT 1"' &>/dev/null; then
             echo "⚙️ Таблица версий найдена, проверяем миграции..."
 
-            # Получаем последнюю применённую версию миграций DB
-            DB_VERSION=$(timeout 15s docker-compose exec db sh -c "PGPASSWORD=$POSTGRES_PASSWORD psql -h db -U $POSTGRES_USER -d $POSTGRES_DB -t -c 'SELECT version_num FROM alembic_version LIMIT 1' | tr -d '[:space:]'")
+            # Получаем список неприменённых миграций
+            PENDING_MIGRATIONS=$(timeout 30s docker-compose exec bot sh -c "cd /app && alembic upgrade --sql head" | grep -c "CREATE TABLE")
 
-            # Получаем последнюю доступную версию миграций
-            HEAD_VERSION=$(timeout 15s docker-compose exec bot sh -c "cd /app && alembic heads | awk '{print \$1}' | tr -d '[:space:]'")
-            if [ "$DB_VERSION" != "$HEAD_VERSION" ]; then
-              echo "⛔ Обнаружены неприменённые миграции (БД: $DB_VERSION, доступно: $HEAD_VERSION)..."
-              echo "🔄 Применение миграций..."
-              timeout 60s docker-compose exec bot sh -c "cd /app && alembic upgrade head" || {
-                echo "❌ Ошибка миграций"
+            if [ "$PENDING_MIGRATIONS" -gt 0 ]; then
+              echo "🔄 Обнаружено $PENDING_MIGRATIONS неприменённых миграций. Применяем..."
+              timeout 120s docker-compose exec bot sh -c "cd /app && alembic upgrade head" || {
+                echo "❌ Ошибка применения миграций"
                 docker-compose logs db
                 exit 1
               }
             else
-              echo "✅ Миграции актуальны"
+              echo "✅ Нет неприменённых миграций"
+              echo "🔍 Статус сервисов:"
+              docker-compose ps
+              echo "📜 Последние логи бота:"
+              docker-compose logs --tail=20 bot
+              echo "🎉 Деплой успешно завершен!"
+              exit 0
             fi
           else
             echo "⚙️ Таблица версий не найдена, инициализируем..."
-            timeout 30s docker-compose exec bot alembic stamp head || {
+            timeout 60s docker-compose exec bot sh -c "cd /app && alembic stamp head" || {
               echo "❌ Ошибка инициализации"
+              docker-compose logs db
+              exit 1
+            }
+
+            # Применяем все миграции после инициализации
+            echo "🔄 Применяем все миграции..."
+            timeout 120s docker-compose exec bot sh -c "cd /app && alembic upgrade head" || {
+              echo "❌ Ошибка применения миграций"
               docker-compose logs db
               exit 1
             }
@@ -138,4 +149,5 @@ jobs:
           echo "📜 Последние логи бота:"
           docker-compose logs --tail=20 bot
           echo "🎉 Деплой успешно завершен!"
+          exit 0
           EOF
