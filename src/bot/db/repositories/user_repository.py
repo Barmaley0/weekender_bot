@@ -1,14 +1,16 @@
 import logging
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, Optional
 
 import pytz
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import and_, delete, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from src.bot.db.models import Option, OptionCategory, User, UserOption
+from src.bot.db.models import Option, OptionCategory, PhotoProfile, User, UserOption
 from src.bot.utils.decorators import connect_db
 
 
@@ -44,6 +46,185 @@ async def user_data_exists(session: AsyncSession, tg_id: int) -> bool:
 
 
 @connect_db
+async def get_user_by_username(session: AsyncSession, username: str) -> User | None:
+    return await session.scalar(select(User).where(func.lower(User.username) == func.lower(username)))
+
+
+@connect_db
+async def get_user_photo(session: AsyncSession, tg_id: int) -> list[str] | None:
+    photo_list = await session.scalar(
+        select(PhotoProfile.profile_photo_ids).join(User, PhotoProfile.user_id == User.id).where(User.tg_id == tg_id)
+    )
+
+    logger.info(f'User {tg_id} photo list: {photo_list}')
+
+    if not photo_list:
+        return None
+
+    return photo_list
+
+
+@connect_db
+async def update_only_interests(session: AsyncSession, tg_id: int, interests: list[str]) -> bool:
+    """Обновляет только интересы пользователя"""
+    try:
+        user = await session.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            logger.warning(f'User {tg_id} not found')
+            return False
+
+        # Удаляем старые интересы
+        await session.execute(
+            delete(UserOption).where(
+                UserOption.user_id == user.id,
+                UserOption.option_id.in_(
+                    select(Option.id).join(OptionCategory).where(OptionCategory.name == 'interest')
+                ),
+            )
+        )
+
+        # Добавляем новые интересы
+        interest_options = await session.scalars(
+            select(Option).join(OptionCategory).where(OptionCategory.name == 'interest', Option.name.in_(interests))
+        )
+
+        for option in interest_options:
+            session.add(UserOption(user_id=user.id, option_id=option.id, selected=True))
+
+        await session.commit()
+        logger.info(f'Interests updated for user {tg_id}')
+        return True
+
+    except Exception as e:
+        logger.error(f'Error updating interests: {e}')
+        await session.rollback()
+        return False
+
+
+@connect_db
+async def find_compatible_users(
+    session: AsyncSession, tg_id: int, age_ranges: list[str], limit: int = 7, exclude_ids: list[int] | None = None
+) -> Sequence[User]:
+    """Находит совместимых пользователей с учетом цели (дружба/отношения)"""
+    logger.info(f'Searching compatible users for tg_id: {tg_id}')
+
+    # Получаем данные текущего пользователя
+    current_user = await get_user(tg_id)
+    if not current_user:
+        return []
+
+    user_data = await get_user_data(tg_id)
+    if not user_data:
+        return []
+
+    # Базовые условия
+    conditions = [User.tg_id != tg_id]
+
+    # 1. Фильтр по возрасту
+    age_conditions = []
+    for age_range in age_ranges:
+        try:
+            if age_range.endswith('+'):
+                min_age = int(age_range[:-1])
+                age_conditions.append(User.year >= min_age)
+            else:
+                min_age, max_age = map(int, age_range.split('-'))
+                age_conditions.append(and_(User.year >= min_age, User.year <= max_age))
+        except (ValueError, AttributeError):
+            continue
+
+    if age_conditions:
+        conditions.append(or_(*age_conditions))
+
+    # 2. Фильтр по округу
+    if user_data.get('district'):
+        district_condition = exists().where(
+            and_(
+                UserOption.user_id == User.id,
+                UserOption.option_id == Option.id,
+                Option.name == user_data['district'],
+                OptionCategory.name == 'district',
+                UserOption.selected,
+            )
+        )
+        conditions.append(district_condition)
+
+    # 3. Фильтр по цели (дружба/отношения)
+    if user_data.get('target'):
+        # Получаем цель текущего пользователя
+        current_target = user_data['target']
+
+        # Условие для цели другого пользователя
+        target_condition = exists().where(
+            and_(
+                UserOption.user_id == User.id,
+                UserOption.option_id == Option.id,
+                Option.name == current_target,  # Должна совпадать цель
+                OptionCategory.name == 'target',
+                UserOption.selected,
+            )
+        )
+        conditions.append(target_condition)
+
+        # Дополнительно фильтруем по полу, если цель "отношения"
+        if current_target == 'Отношения' and user_data.get('gender'):
+            opposite_gender = 'Мужской' if user_data['gender'] == 'Женский' else 'Женский'
+            gender_condition = exists().where(
+                and_(
+                    UserOption.user_id == User.id,
+                    UserOption.option_id == Option.id,
+                    Option.name == opposite_gender,
+                    OptionCategory.name == 'gender',
+                    UserOption.selected,
+                )
+            )
+            conditions.append(gender_condition)
+
+    # 4. Фильтр по интересам (хотя бы один общий)
+    if user_data.get('interests'):
+        user_interests_subq = (
+            select(Option.name)
+            .join(UserOption, Option.id == UserOption.option_id)
+            .join(OptionCategory, Option.category_id == OptionCategory.id)
+            .where(UserOption.user_id == current_user.id, OptionCategory.name == 'interest', UserOption.selected)
+        ).scalar_subquery()
+
+        interests_condition = exists().where(
+            and_(
+                UserOption.user_id == User.id,
+                UserOption.option_id == Option.id,
+                Option.name.in_(user_interests_subq),
+                OptionCategory.name == 'interest',
+                UserOption.selected,
+            )
+        )
+        conditions.append(interests_condition)
+
+    # Исключаем уже показанных пользователей
+    if exclude_ids:
+        conditions.append(User.tg_id.not_in(exclude_ids))
+
+    # Формируем запрос
+    query = (
+        select(User)
+        .where(and_(*conditions))
+        .options(
+            selectinload(User.photo_profile),
+            selectinload(User.options).joinedload(UserOption.option).joinedload(Option.category),
+        )
+        .order_by(func.random())
+        .limit(limit)
+    )
+
+    try:
+        result = await session.scalars(query)
+        return result.unique().all()
+    except Exception as e:
+        logger.error(f'Error finding compatible users: {e}')
+        return []
+
+
+@connect_db
 async def save_first_user(session: AsyncSession, tg_id: int, first_name: str, username: Optional[str]) -> None:
     utc_timezone = pytz.timezone('UTC')
     created_at_utc = utc_timezone.localize(datetime.utcnow())
@@ -64,13 +245,39 @@ async def save_first_user(session: AsyncSession, tg_id: int, first_name: str, us
 
 
 @connect_db
+async def save_user_photos(session: AsyncSession, tg_id: int, photo_ids: list[str]) -> None:
+    try:
+        user = await session.scalar(select(User).where(User.tg_id == tg_id))
+
+        if not user:
+            logger.error(f'User with tg_id {tg_id} not found')
+            return
+
+        await session.execute(delete(PhotoProfile).where(PhotoProfile.user_id == user.id))
+
+        session.add(
+            PhotoProfile(
+                user_id=user.id,
+                profile_photo_ids=photo_ids,
+            )
+        )
+        await session.commit()
+        logger.info(f'User {tg_id} photos saved')
+    except Exception as e:
+        logger.error(f'Failed to save user {tg_id} photos: {e}', exc_info=True)
+
+
+@connect_db
 async def set_user_data_save(
     session: AsyncSession,
     tg_id: int,
     year: str,
     gender: str,
     status: str,
+    target: str,
     district: str,
+    profession: str,
+    about: str,
     interests: list[str],
 ) -> None:
     try:
@@ -95,10 +302,12 @@ async def set_user_data_save(
             .values(
                 year=year,
                 date_update=created_at_local,
+                profession=profession,
+                about=about,
             )
         )
 
-        # Находиь ID гендера
+        # Находим ID гендера
         gender_option = await session.scalar(
             select(Option)
             .join(OptionCategory)
@@ -124,6 +333,19 @@ async def set_user_data_save(
             logger.error(f'Status {status} not found in database')
             raise ValueError(f'Status {status} not found')
 
+        # Находим ID цели
+        target_option = await session.scalar(
+            select(Option)
+            .join(OptionCategory)
+            .where(
+                OptionCategory.name == 'target',
+                Option.name == target,
+            )
+        )
+        if not target_option:
+            logger.error(f'Target {target} not found in database')
+            raise ValueError(f'Target {target} not found')
+
         # Находиь ID округа
         district_option = await session.scalar(
             select(Option)
@@ -144,7 +366,7 @@ async def set_user_data_save(
                 UserOption.option_id.in_(
                     select(Option.id)
                     .join(OptionCategory)
-                    .where(OptionCategory.name.in_(['gender', 'status', 'district']))
+                    .where(OptionCategory.name.in_(['gender', 'status', 'target', 'district']))
                 ),
             )
         )
@@ -160,6 +382,11 @@ async def set_user_data_save(
                 UserOption(
                     user_id=user.id,
                     option_id=status_option.id,
+                    selected=True,
+                ),
+                UserOption(
+                    user_id=user.id,
+                    option_id=target_option.id,
                     selected=True,
                 ),
                 UserOption(
@@ -208,10 +435,15 @@ async def get_user_data(session: AsyncSession, user_id: int) -> dict[str, Any]:
 
     if not user:
         return {
+            'first_name': None,
+            'username': None,
             'year': None,
             'gender': None,
             'status': None,
+            'target': None,
             'district': None,
+            'profession': None,
+            'about': None,
             'interests': [],
         }
 
@@ -225,10 +457,15 @@ async def get_user_data(session: AsyncSession, user_id: int) -> dict[str, Any]:
     )
 
     result: dict = {
+        'first_name': user.first_name,
+        'username': user.username,
         'year': user.year,
         'gender': None,
         'status': None,
+        'target': None,
         'district': None,
+        'profession': user.profession,
+        'about': user.about,
         'interests': [],
     }
 
@@ -237,9 +474,11 @@ async def get_user_data(session: AsyncSession, user_id: int) -> dict[str, Any]:
             result['gender'] = option_name
         if category_name == 'status':
             result['status'] = option_name
-        elif category_name == 'district':
+        if category_name == 'target':
+            result['target'] = option_name
+        if category_name == 'district':
             result['district'] = option_name
-        elif category_name == 'interest':
+        if category_name == 'interest':
             if isinstance(result['interests'], list):
                 result['interests'].append(option_name)
 

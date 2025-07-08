@@ -5,7 +5,8 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 
 import src.bot.db.repositories.user_repository as req_user
-import src.bot.keyboards.builders as kb
+
+from src.bot.utils.texts import get_text_command_start
 
 
 logging.basicConfig(level=logging.INFO)
@@ -16,31 +17,32 @@ router_user = Router()
 
 @router_user.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    if message.from_user:
-        await req_user.save_first_user(
-            message.from_user.id,
-            message.from_user.first_name,
-            message.from_user.username,
-        )
+    if not message.from_user or not message.bot:
+        return
+
+    try:
+        profile_photo_ids = list()
 
         try:
-            is_user_data = await req_user.user_data_exists(message.from_user.id)
+            user_photos = await message.bot.get_user_profile_photos(user_id=message.from_user.id, limit=10)
+            logger.info(f'Found {user_photos.total_count} profile photos for user {message.from_user.id}')
 
-            await message.answer(
-                f"""
-<b>Привет, {f'{message.from_user.first_name}' if message.from_user.first_name else ''}! Ты в тёплом месте 🌴</b>
-Тут мы помогаем находить события, после которых хочется жить чуть ярче, смеяться чуть громче и обниматься чуть крепче.
-
-От вечеринок до уютных арт-лекций — расскажи немного о себе и я подберу тебе что-то по вкусу.
-
-🎁 Чем активнее ты — тем больше баллов получаешь. Потом можешь использовать их, чтобы получить скидку, апнуться до уровня "Гуру вайба" или даже стать нашим амбассадором и получать приятные бонусы.
-
-💜 А ещё у нас есть чат @weekender_chat, где можно найти друзей, договориться пойти вместе на событие и просто быть собой. Потому что в компании — всегда легче дышится. Подпишись на чат и получи приветственные 100 баллов.
-
-Чувствуй себя как дома. Здесь тебя ждут.
-            """,
-                reply_markup=await kb.get_main_kb(user_data_exists=is_user_data),
-                parse_mode='html',
-            )
+            if user_photos and user_photos.total_count > 0:
+                profile_photo_ids = [photo[-1].file_id for photo in user_photos.photos]
+                logger.info(f'Found {len(profile_photo_ids)} profile photos for user {message.from_user.id}')
         except Exception as e:
-            logger.error(f'Errof checking user data: {e}')
+            logger.error(f'Failed to get profile photos for user {message.from_user.id}: {e}')
+
+        await req_user.save_first_user(
+            tg_id=message.from_user.id,
+            first_name=message.from_user.first_name,
+            username=message.from_user.username,
+        )
+
+        if profile_photo_ids:
+            await req_user.save_user_photos(tg_id=message.from_user.id, photo_ids=profile_photo_ids)
+    except Exception as e:
+        logger.error(f'Failed to save user data: {e}')
+        await message.answer('❌ Произошла ошибка. Попробуйте позже.')
+
+    await get_text_command_start(message)
