@@ -51,7 +51,7 @@ async def get_residents_menu_kb() -> InlineKeyboardMarkup:
 async def get_chats_kb() -> InlineKeyboardMarkup:
     menu_inline = InlineKeyboardBuilder()
     menu_inline.add(
-        InlineKeyboardButton(text='Чаты', url='https://t.me/+hAwst9wJ-4kzNTdi'),
+        InlineKeyboardButton(text='Чат', url='https://t.me/+hAwst9wJ-4kzNTdi'),
     )
 
     menu_inline.adjust(1)
