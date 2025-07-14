@@ -18,3 +18,10 @@ class PeopleSearch(StatesGroup):
     age_range = State()  # list[str]
     shown_people_ids = State()  # list[int]
     waiting_for_username = State()  # str
+
+
+class LikeFriendProfile(StatesGroup):
+    liked_profiles_ids = State()  # ID профилей, которым поставлен лайк list[int]
+    friend_profiles_ids = State()  # ID профилей, которым поставлен лайк друзья list[int]
+    reciprocated_profile_ids = State()  # ID взаимных лайков list[int]
+    is_reciprocated = State()  # Флфг наличия взаимных лайков bool

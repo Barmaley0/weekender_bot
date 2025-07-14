@@ -58,7 +58,7 @@ async def get_username(message: Message, state: FSMContext) -> None:
 
         logger.info(f'Found user: {user}')
 
-        await show_user_profile(message=message, tg_id=user.tg_id, username=user.username)
+        await show_user_profile(message=message, tg_id=user.tg_id, state=state, username=user.username)
 
     except Exception as e:
         logger.error(f'Error in get_username handler: {e}')

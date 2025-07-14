@@ -13,6 +13,7 @@ import src.bot.keyboards.builders as kb
 from src.bot.fsm.user_states import PeopleSearch, UserData
 from src.bot.utils.helpers import (
     data_get_update,
+    refresh_profile_message,
     safe_delete_message,
     send_events_list,
     show_people_results,
@@ -27,78 +28,10 @@ logger = logging.getLogger(__name__)
 router_user = Router()
 
 
-@router_user.callback_query(F.data.startswith('profile'))
-async def get_profile(callback: CallbackQuery) -> None:
-    if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
-        return
-    await show_profile_with_photos(callback=callback)
-
-
-@router_user.callback_query(F.data == 'edit_profile')
-async def edit_profile(callback: CallbackQuery, state: FSMContext) -> None:
-    if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
-        await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
-        return
-
-    await callback.answer()
-    await start_events_list(
-        user_id=callback.from_user.id,
-        message=callback.message,
-        state=state,
-    )
-
-
-@router_user.callback_query(F.data == 'edit_events')
-async def edit_events(callback: CallbackQuery, state: FSMContext) -> None:
-    if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
-        await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
-        return
-
-    try:
-        user_data = await req_user.get_user_data(callback.from_user.id)
-        if not user_data:
-            await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
-            return
-
-        await state.set_state(UserData.interests)
-        await state.update_data(
-            year=user_data.get('year'),
-            gender=user_data.get('gender'),
-            status=user_data.get('status'),
-            target=user_data.get('target'),
-            district=user_data.get('district'),
-            profession=user_data.get('profession'),
-            about=user_data.get('about'),
-            interests=user_data.get('interests', []),
-            shown_events=user_data.get('shown_events', []),
-            edit_mode='only_interests',
-        )
-
-        await callback.message.answer(
-            'Обновите интересы:',
-            reply_markup=await kb.interests_kb(state=state),
-        )
-        await callback.answer()
-    except Exception as e:
-        logger.error(f'Error in edit_events: {e}')
-        await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
-
-
-@router_user.callback_query(F.data == 'find_user')
-async def find_user(callback: CallbackQuery, state: FSMContext) -> None:
-    if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
-        await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
-        return
-
-    await callback.message.answer(
-        'Введите @username пользователя, которого хотите найти:',
-    )
-    await state.set_state(PeopleSearch.waiting_for_username)
-    await callback.answer()
-
-
+# --- Хендлеры для Events ---
 @router_user.callback_query(F.data.startswith('events'))
 async def repeat_recommendations(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
+    """Повторяем список ивентов по фильтрам"""
     if not callback.message or not isinstance(callback.message, Message):
         await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
         return
@@ -135,15 +68,188 @@ async def repeat_recommendations(callback: CallbackQuery, state: FSMContext, bot
         await callback.answer('❌ Произошла ошибка. Попробуйте позже.')
 
 
+@router_user.callback_query(F.data == 'edit_events')
+async def edit_events(callback: CallbackQuery, state: FSMContext) -> None:
+    """Редактирование интересов для поиска ивентов"""
+    if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
+        await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
+        return
+
+    try:
+        user_data = await req_user.get_user_data(callback.from_user.id)
+        if not user_data:
+            await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
+            return
+
+        await state.set_state(UserData.interests)
+        await state.update_data(
+            year=user_data.get('year'),
+            gender=user_data.get('gender'),
+            status=user_data.get('status'),
+            target=user_data.get('target'),
+            district=user_data.get('district'),
+            profession=user_data.get('profession'),
+            about=user_data.get('about'),
+            interests=user_data.get('interests', []),
+            shown_events=user_data.get('shown_events', []),
+            edit_mode='only_interests',
+        )
+
+        await callback.message.answer(
+            'Обновите интересы:',
+            reply_markup=await kb.interests_kb(state=state),
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f'Error in edit_events: {e}')
+        await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
+
+
+# TODO: оптимизировать в общую логику toggle_like and toggle_friend
+# --- Хендлеры для лайков ---
+@router_user.callback_query(F.data.startswith('like_toggle_'))
+async def toggle_like(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
+    """Обрабатывает нажатие кнопки Лайк для отношений"""
+    if not callback.from_user or not callback.data or not isinstance(callback.message, Message):
+        await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
+        return
+
+    callback_list = callback.data.split('_')
+    to_user_id = int(callback_list[-1])
+    like_tag = callback_list[0]
+    data = await state.get_data()
+    liked_ids = data.get('liked_profile_ids', [])
+    reciprocated_ids = data.get('reciprocated_profile_ids', [])
+
+    if to_user_id in liked_ids:
+        liked_ids.remove(to_user_id)
+        if to_user_id in reciprocated_ids:
+            reciprocated_ids.remove(to_user_id)
+        await callback.answer('Лайк убран')
+        await req_user.delete_like_and_friend_from_db(
+            from_tg_id=callback.from_user.id,
+            to_tg_id=to_user_id,
+            action_type=like_tag,
+        )
+    else:
+        liked_ids.append(to_user_id)
+        await callback.answer('Лайк поставлен!')
+        await req_user.add_like_and_friend_to_db(
+            from_tg_id=callback.from_user.id,
+            to_tg_id=to_user_id,
+            action_type=like_tag,
+            state=state,
+            bot=bot,
+        )
+
+        data = await state.get_data()
+        reciprocated_ids = data.get('reciprocated_profile_ids', [])
+
+    await state.update_data({'liked_profile_ids': liked_ids, 'reciprocated_profile_ids': reciprocated_ids})
+    await refresh_profile_message(callback=callback, state=state)
+
+
+@router_user.callback_query(F.data.startswith('friend_toggle_'))
+async def toggle_friend(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
+    """Обрабатывает нажатие кнопки Лайк для дружбы"""
+    if not callback.from_user or not callback.data or not isinstance(callback.message, Message):
+        await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
+        return
+
+    callback_list = callback.data.split('_')
+    to_user_id = int(callback_list[-1])
+    friend_tag = callback_list[0]
+    data = await state.get_data()
+    friend_ids = data.get('friend_profile_ids', [])
+    reciprocated_ids = data.get('reciprocated_profile_ids', [])
+    logger.info(
+        f'*** to_user_id: {to_user_id}, friend_tag: {friend_tag}, callback.from_user.id: {callback.from_user.id}'
+    )
+
+    if to_user_id in friend_ids:
+        friend_ids.remove(to_user_id)
+        if to_user_id in reciprocated_ids:
+            reciprocated_ids.remove(to_user_id)
+        await callback.answer('Лайк убран')
+        await req_user.delete_like_and_friend_from_db(
+            from_tg_id=callback.from_user.id,
+            to_tg_id=to_user_id,
+            action_type=friend_tag,
+        )
+    else:
+        friend_ids.append(to_user_id)
+        await callback.answer('Лайк поставлен!')
+        await req_user.add_like_and_friend_to_db(
+            from_tg_id=callback.from_user.id,
+            to_tg_id=to_user_id,
+            action_type=friend_tag,
+            state=state,
+            bot=bot,
+        )
+
+    await state.update_data({'friend_profile_ids': friend_ids})
+    await refresh_profile_message(callback=callback, state=state)
+
+
+# --- Хендлеры для профиля ---
+@router_user.callback_query(F.data.startswith('profile'))
+async def get_profile(callback: CallbackQuery) -> None:
+    """Показать профиль с фотографиями"""
+    if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
+        return
+    await show_profile_with_photos(callback=callback)
+
+
+@router_user.callback_query(F.data == 'edit_profile')
+async def edit_profile(callback: CallbackQuery, state: FSMContext) -> None:
+    """Редактировать профиль"""
+    if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
+        await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
+        return
+
+    await callback.answer()
+    await start_events_list(
+        user_id=callback.from_user.id,
+        message=callback.message,
+        state=state,
+    )
+
+
+# --- Хендлеры для поиска пользователей ---
+@router_user.callback_query(F.data == 'find_user')
+async def find_user(callback: CallbackQuery, state: FSMContext) -> None:
+    """Поиск пользователя по username"""
+    if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
+        await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
+        return
+
+    await callback.message.answer(
+        'Введите @username пользователя, которого хотите найти:',
+    )
+    await state.set_state(PeopleSearch.waiting_for_username)
+    await callback.answer()
+
+
 @router_user.callback_query(F.data == 'find_people')
 async def find_people(callback: CallbackQuery, state: FSMContext) -> None:
+    """Поиск людей по возрасту, полу, дружба/отношения и интересам"""
     if not callback.message or not isinstance(callback.message, Message):
         await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
         return
 
     try:
+        await req_user.load_user_like_and_friend(callback.from_user.id, state=state)
+        data = await state.get_data()
+        if 'shown_people_ids' not in data:
+            await state.update_data(shown_people_ids=[])
+        if 'liked_profile_ids' not in data:
+            await state.update_data(liked_profile_ids=[])
+        if 'friend_profile_ids' not in data:
+            await state.update_data(friend_profile_ids=[])
+        if 'reciprocated_profile_ids' not in data:
+            await state.update_data(reciprocated_profile_ids=[])
+
         await state.set_state(PeopleSearch.age_range)
-        await state.update_data(shown_people_ids=[])
         await callback.message.answer(
             """
 Выберите возрастной диапазон:
@@ -166,7 +272,7 @@ async def get_age_range(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
         return
 
     try:
-        age_range = callback.data.split('_')[2]  # age_range_18-25 -> 18-25
+        age_range = callback.data.split('_')[-1]  # age_range_18-25 -> 18-25
         data = await state.get_data()
         logger.info(f'Current age ranges: {data.get("age_ranges", [])}')
 
@@ -247,6 +353,16 @@ async def show_more_people(callback: CallbackQuery, state: FSMContext, bot: Bot)
         return
 
     try:
+        await req_user.load_user_like_and_friend(callback.from_user.id, state=state)
+        data = await state.get_data()
+        if 'shown_people_ids' not in data:
+            await state.update_data(shown_people_ids=[])
+        if 'liked_profile_ids' not in data:
+            await state.update_data(liked_profile_ids=[])
+        if 'friend_profile_ids' not in data:
+            await state.update_data(friend_profile_ids=[])
+        if 'reciprocated_profile_ids' not in data:
+            await state.update_data(reciprocated_profile_ids=[])
         chat_id = callback.message.chat.id
 
         async def show_typing() -> None:
@@ -261,6 +377,7 @@ async def show_more_people(callback: CallbackQuery, state: FSMContext, bot: Bot)
         await callback.answer('❌ Ошибка при загрузке')
 
 
+# --- Хендлеры основной анкеты ---
 @router_user.callback_query(F.data.startswith('gender_'))
 async def get_gender(callback: CallbackQuery, state: FSMContext) -> None:
     logger.info(f'Current state: {await state.get_state()}, Data: {await state.get_data()}')

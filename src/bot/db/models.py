@@ -1,6 +1,17 @@
 import logging
 
-from sqlalchemy import ARRAY, BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    ARRAY,
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.bot.db.connection import Base, engine
@@ -35,6 +46,30 @@ class User(Base):
         cascade='all, delete-orphan',
         passive_deletes=True,
     )
+    sent_likes: Mapped[list['LikeProfile']] = relationship(
+        back_populates='from_user',
+        cascade='all, delete-orphan',
+        foreign_keys='LikeProfile.from_user_id',
+        passive_deletes=True,
+    )
+    received_likes: Mapped[list['LikeProfile']] = relationship(
+        back_populates='to_user',
+        cascade='all, delete-orphan',
+        foreign_keys='LikeProfile.to_user_id',
+        passive_deletes=True,
+    )
+    sent_friend_requests: Mapped[list['FriendRequest']] = relationship(
+        back_populates='from_user',
+        cascade='all, delete-orphan',
+        foreign_keys='FriendRequest.from_user_id',
+        passive_deletes=True,
+    )
+    received_friend_requests: Mapped[list['FriendRequest']] = relationship(
+        back_populates='to_user',
+        cascade='all, delete-orphan',
+        foreign_keys='FriendRequest.to_user_id',
+        passive_deletes=True,
+    )
 
     def __repr__(self) -> str:
         return f'User id: {self.id}, tg_id: {self.tg_id}'
@@ -48,6 +83,60 @@ class PhotoProfile(Base):
     profile_photo_ids: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=True)
 
     user: Mapped['User'] = relationship(back_populates='photo_profile', lazy='joined')
+
+
+class LikeProfile(Base):
+    __tablename__ = 'like_profile'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    from_user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    to_user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    date_create: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_reciprocated: Mapped[bool] = mapped_column(Boolean(), default=False)
+
+    from_user: Mapped['User'] = relationship(
+        foreign_keys=[from_user_id],
+        back_populates='sent_likes',
+        lazy='selectin',
+    )
+    to_user: Mapped['User'] = relationship(
+        foreign_keys=[to_user_id],
+        back_populates='received_likes',
+        lazy='selectin',
+    )
+
+    __table_args__ = (
+        UniqueConstraint('from_user_id', 'to_user_id', name='unique_like'),
+        Index('ix_like_profile_reciprocated', 'is_reciprocated'),
+        Index('ix_like_profile_date_create', 'date_create'),
+    )
+
+
+class FriendRequest(Base):
+    __tablename__ = 'friend_requests'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    from_user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    to_user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    date_create: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_reciprocated: Mapped[bool] = mapped_column(Boolean(), default=False)
+
+    from_user: Mapped['User'] = relationship(
+        foreign_keys=[from_user_id],
+        back_populates='sent_friend_requests',
+        lazy='selectin',
+    )
+    to_user: Mapped['User'] = relationship(
+        foreign_keys=[to_user_id],
+        back_populates='received_friend_requests',
+        lazy='selectin',
+    )
+
+    __table_args__ = (
+        UniqueConstraint('from_user_id', 'to_user_id', name='unique_friend_request'),
+        Index('ix_friend_request_reciprocated', 'is_reciprocated'),
+        Index('ix_friend_request_date_create', 'date_create'),
+    )
 
 
 class OptionCategory(Base):

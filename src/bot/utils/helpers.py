@@ -9,12 +9,14 @@ from aiogram.filters import Filter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     CallbackQuery,
+    InlineKeyboardMarkup,
     InputMediaAudio,
     InputMediaDocument,
     InputMediaPhoto,
     InputMediaVideo,
     MaybeInaccessibleMessage,
     Message,
+    ReplyKeyboardMarkup,
 )
 
 import src.bot.db.repositories.admin_repository as req_admin
@@ -185,29 +187,7 @@ async def show_profile_with_photos(callback: CallbackQuery) -> None:
         return
 
     try:
-        user_data = await req_user.get_user_data(callback.from_user.id)
-        photo_ids = await req_user.get_user_photo(callback.from_user.id)
-
-        if photo_ids:
-            media_group: list[InputMediaType] = [InputMediaPhoto(media=photo_id) for photo_id in photo_ids[:10]]
-            await callback.message.answer_media_group(media=media_group)
-        else:
-            await callback.message.answer('Нет фотографий профиля')
-
-        profile_text = f"""
-    👤 <b>{user_data.get('first_name', 'не указан')}</b>
-
-🎂 <b>Возраст:</b> {user_data.get('year', 'не указан')}
-♂️ <b>Пол:</b> {user_data.get('gender', 'не указан')}
-💍 <b>Статус:</b> {user_data.get('status', 'не указан')}(а)
-🎯 <b>Цель:</b> {user_data.get('target', 'не указана')}
-🏙 <b>Район:</b> {user_data.get('district', 'не указан')}
-💼 <b>Профессия:</b> {user_data.get('profession', 'не указана')}
-❤️ <b>Интересы:</b> {', '.join(user_data.get('interests', [])) or 'не указаны'}
-📄 <b>О себе:</b> {user_data.get('about', 'не указано')}
-    """
-
-        await callback.message.answer(profile_text, parse_mode='html')
+        await send_user_profile(callback, callback.from_user.id)
         await callback.answer()
 
     except Exception as e:
@@ -215,6 +195,7 @@ async def show_profile_with_photos(callback: CallbackQuery) -> None:
         await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
 
 
+# Показать результаты поиска пользователей с фотографиями и без.
 async def show_people_results(callback: CallbackQuery, state: FSMContext) -> None:
     """Показывает результаты поиска людей"""
     if not callback.from_user or not callback.data or not callback.message or not isinstance(callback.message, Message):
@@ -232,13 +213,14 @@ async def show_people_results(callback: CallbackQuery, state: FSMContext) -> Non
 
         if not users:
             await callback.message.answer('😔 Больше подходящих людей не найдено, попробуй изменить анкету')
+            # Очищаем состояние
             await state.clear()
             await state.update_data(shown_people_ids=[])
             return
 
         # Показываем каждого пользователя
         for user in users:
-            await show_user_profile(callback.message, user.tg_id)
+            await show_user_profile(callback.message, user.tg_id, state=state)
 
         # Обновляем список показанных ID
         new_shown_ids = shown_ids + [user.tg_id for user in users]
@@ -254,38 +236,83 @@ async def show_people_results(callback: CallbackQuery, state: FSMContext) -> Non
         await callback.message.answer('❌ Ошибка при показе результатов')
 
 
-async def show_user_profile(message: Message, tg_id: int, username: str | None = None) -> None:
+# Показать свой профиль
+async def show_user_profile(message: Message, tg_id: int, state: FSMContext, username: str | None = None) -> None:
     """Показывает профиль пользователя с фото"""
     if not message or not isinstance(message, Message):
         return
 
     try:
-        # Получаем данные пользователя
-        user_data = await req_user.get_user_data(tg_id)
-        if not user_data:
-            await message.answer('❌ Профиль пользователя не найден')
-            return
+        await send_user_profile(message, tg_id, state=state)
+    except Exception as e:
+        logger.error(f'Error showing user profile {tg_id}: {e}')
 
-        # Обработка фотографий
-        photo_ids = await req_user.get_user_photo(tg_id)
 
+# Обновить сообщение профиля
+async def refresh_profile_message(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.from_user or not callback.data or not isinstance(callback.message, Message):
+        return
+
+    target_id = int(callback.data.split('_')[-1])
+    user_data = await req_user.get_user_data(target_id)
+
+    current_markup = callback.message.reply_markup
+
+    new_markup = await kb.send_message_user_and_like_kb(
+        tg_id=target_id,
+        username=user_data.get('username'),
+        state=state,
+        target=user_data.get('target'),
+    )
+
+    if str(current_markup) != str(new_markup):
         try:
-            if photo_ids:
-                media_group: list[InputMediaType] = [InputMediaPhoto(media=photo_id) for photo_id in photo_ids[:10]]
-                await message.answer_media_group(media=media_group)
-            else:
-                await message.answer('Нет фотографий профиля')
-        except Exception as media_error:
-            logger.error(f'Failed to send media for user {tg_id}: {media_error}')
-            await message.answer('❌ Не удалось загрузить фотографии профиля')
+            await callback.message.edit_reply_markup(reply_markup=new_markup)
+        except Exception as e:
+            logger.error(f'Error in refresh_profile_message: {e}')
+    else:
+        logger.info('No need to refresh profile message')
 
-        # Формирование текста профиля с защитой от None
-        interests = user_data.get('interests', [])
-        if interests is None:  # Дополнительная проверка на None
-            interests = []
 
-        profile_text = f"""
-    👤 <b>{user_data.get('first_name', 'не указан')}</b>
+# Отправить уведомление о взаимном лайке
+async def send_match_notification(
+    bot: Bot,
+    recipient_tg_id: int,
+    matched_user_tg_id: int,
+    state: FSMContext,
+    target: str,
+) -> None:
+    try:
+        # Отправляем уведомление о взаимном лайке
+        if target == 'like':
+            match_title = '💖 Это взаимно! Вы понравились этому пользователю'
+        elif target == 'friend':
+            match_title = '🙂 Это взаимно! С вами хотят дружить'
+
+        await bot.send_message(chat_id=recipient_tg_id, text=match_title)
+
+        await send_user_profile(recipient_tg_id, matched_user_tg_id, bot=bot, state=state)
+
+    except Exception as e:
+        logger.error(f'Failed to send match notification: {e}')
+
+
+async def get_user_profile_data(user_id: int) -> tuple[list[str] | None, str] | tuple[None, None]:
+    """
+    Получает данные профиля пользователя
+    Возвращает tuple: (список photo_ids, текст профиля) или (None, None) если пользователь не найден
+    """
+    user_data = await req_user.get_user_data(user_id)
+
+    if not user_data:
+        return None, None
+
+    photo_ids = await req_user.get_user_photo(user_id)
+
+    interests = user_data.get('interests', []) or []
+
+    profile_text = f"""
+👤 <b>{user_data.get('first_name', 'не указан')}</b>
 
 🎂 <b>Возраст:</b> {user_data.get('year', 'не указан')}
 ♂️ <b>Пол:</b> {user_data.get('gender', 'не указан')}
@@ -293,26 +320,117 @@ async def show_user_profile(message: Message, tg_id: int, username: str | None =
 🎯 <b>Цель:</b> {user_data.get('target', 'не указана')}
 🏙 <b>Район:</b> {user_data.get('district', 'не указан')}
 💼 <b>Профессия:</b> {user_data.get('profession', 'не указана')}
-❤️ <b>Интересы:</b> {', '.join(user_data.get('interests', [])) or 'не указаны'}
+❤️ <b>Интересы:</b> {', '.join(interests) or 'не указаны'}
 📄 <b>О себе:</b> {user_data.get('about', 'не указано')}
     """
+    return photo_ids, profile_text
 
-        user_name = user_data.get('username')
-        try:
-            if user_name:
-                await message.answer(
-                    profile_text,
-                    reply_markup=await kb.send_message_user_kb(tg_id=tg_id, username=user_name),
-                    parse_mode='html',
-                )
-            else:
-                await message.answer(
-                    profile_text,
-                    parse_mode='html',
-                )
-        except Exception as text_error:
-            logger.error(f'Failed to send text for user {tg_id}: {text_error}')
-            await message.answer('❌ Не удалось отправить текст профиля')
+
+# Отправить профиль
+async def send_user_profile(
+    recipient: Union[Message, CallbackQuery, int],
+    user_id: int,
+    bot: Optional[Bot] = None,
+    state: Optional[FSMContext] = None,
+) -> bool:
+    """
+    Отправляет профиль пользователя
+    Возвращает True если успешно, False если ошибка
+    """
+    try:
+        photo_ids, profile_text = await get_user_profile_data(user_id)
+        if profile_text is None:
+            await _send_error(recipient, '❌ Профиль пользователя не найден', bot)
+            return False
+
+        # Отправка медиа
+        if photo_ids:
+            media_group: list[InputMediaType] = [InputMediaPhoto(media=pid) for pid in photo_ids[:10]]
+            await _send_media(media_group, recipient, bot)
+        else:
+            await _send_message('Нет фотографий профиля', recipient, bot)
+
+        # Отправка текста профиля
+        user_data = await req_user.get_user_data(user_id)
+        reply_markup = (
+            await kb.send_message_user_and_like_kb(
+                tg_id=user_id,
+                username=user_data.get('username'),
+                state=state,
+                target=user_data.get('target'),
+            )
+            if state
+            else None
+        )
+
+        await _send_message(profile_text, recipient, bot, reply_markup)
+        return True
 
     except Exception as e:
-        logger.error(f'Error showing user profile {tg_id}: {e}')
+        logger.error(f'Error showing user profile {user_id}: {e}')
+        await _send_error(recipient, '❌ Не удалось загрузить профиль', bot)
+        return False
+
+
+#  --- Вспомогательные функции ---
+async def _send_media(
+    media: list[InputMediaType],
+    recipient: Union[Message, CallbackQuery, int],
+    bot: Optional[Bot] = None,
+) -> None:
+    try:
+        if isinstance(recipient, Message):
+            await recipient.answer_media_group(media=media)
+        elif isinstance(recipient, CallbackQuery):
+            if recipient.message and isinstance(recipient.message, Message):
+                await recipient.message.answer_media_group(media=media)
+            else:
+                if not bot:
+                    raise ValueError('Bot instance is required when recipient.message is not available')
+                await bot.send_media_group(chat_id=recipient.from_user.id, media=media)
+        elif isinstance(recipient, int) and bot:
+            await bot.send_media_group(chat_id=recipient, media=media)
+        else:
+            raise ValueError('Invalid recipient type or missing bot instance')
+    except Exception as e:
+        logger.error(f'Failed to send media: {e}')
+        raise
+
+
+async def _send_message(
+    text: str,
+    recipient: Union[Message, CallbackQuery, int],
+    bot: Optional[Bot],
+    reply_markup: Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]] = None,
+) -> None:
+    if isinstance(recipient, Message):
+        await recipient.answer(
+            text,
+            reply_markup=reply_markup,
+            parse_mode='html',
+        )
+    elif isinstance(recipient, CallbackQuery):
+        if recipient.message is not None and isinstance(recipient.message, Message):
+            await recipient.message.answer(
+                text,
+                reply_markup=reply_markup,
+                parse_mode='html',
+            )
+        elif bot:
+            await bot.send_message(
+                chat_id=recipient.from_user.id,
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode='html',
+            )
+    elif bot and isinstance(recipient, int):
+        await bot.send_message(
+            chat_id=recipient,
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode='html',
+        )
+
+
+async def _send_error(recipient: Union[Message, CallbackQuery, int], text: str, bot: Optional[Bot]) -> None:
+    await _send_message(text, recipient, bot)

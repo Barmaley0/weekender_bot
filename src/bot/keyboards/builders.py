@@ -1,3 +1,5 @@
+import logging
+
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
@@ -10,6 +12,10 @@ from src.bot.db.repositories.options_repository import (
     get_all_marital_status,
     get_all_target,
 )
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 async def get_main_kb(user_data_exists: bool) -> ReplyKeyboardMarkup:
@@ -68,25 +74,59 @@ async def show_more_people_kb() -> InlineKeyboardMarkup:
     return menu_inline.as_markup()
 
 
-async def send_message_user_kb(tg_id: int, username: str | None) -> InlineKeyboardMarkup:
+async def send_message_user_and_like_kb(
+    tg_id: int,
+    username: str | None,
+    state: FSMContext,
+    target: str,
+) -> InlineKeyboardMarkup:
+    data = await state.get_data()
+
+    liked_ids = data.get('liked_profile_ids', [])
+    friend_ids = data.get('friend_profile_ids', [])
+    reciprocated_ids = data.get('reciprocated_profile_ids', [])
+    logger.info(f'*** liked_ids: {liked_ids}, friend_ids: {friend_ids}, reciprocated_ids: {reciprocated_ids}')
+
+    is_liked = tg_id in liked_ids
+    is_friend = tg_id in friend_ids
+    is_reciprocated = tg_id in reciprocated_ids
+    logger.info(f'*** is_liked: {is_liked}, is_friend: {is_friend}, is_reciprocated: {is_reciprocated}')
+
     menu_inline = InlineKeyboardBuilder()
 
-    if username:
+    if target == 'Отношения':
         menu_inline.add(
             InlineKeyboardButton(
-                text='✉️ Написать',
-                url=f'https://t.me/{username}',
+                text='💌 Написать' if is_reciprocated else '✉️ Написать',
+                url=f'https://t.me/{username}' if username else f'https://t.me/{tg_id}',
             )
         )
-    else:
+    elif target == 'Дружба':
         menu_inline.add(
             InlineKeyboardButton(
-                text='✉️ Написать',
-                url=f'https://t.me/{tg_id}',
+                text='📧 Написать' if is_reciprocated else '✉️ Написать',
+                url=f'https://t.me/{username}' if username else f'https://t.me/{tg_id}',
             )
         )
 
-    menu_inline.adjust(1)
+    if target == 'Отношения':
+        if not is_reciprocated:
+            menu_inline.add(
+                InlineKeyboardButton(
+                    text='♥️' if is_liked else '🩶',
+                    callback_data=f'like_toggle_{tg_id}',
+                )
+            )
+    elif target == 'Дружба':
+        if not is_reciprocated:
+            menu_inline.add(
+                InlineKeyboardButton(
+                    text='♥️' if is_friend else '🩶',
+                    callback_data=f'friend_toggle_{tg_id}',
+                )
+            )
+
+    menu_inline.adjust(2)
     return menu_inline.as_markup()
 
 
