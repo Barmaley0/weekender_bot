@@ -2,16 +2,19 @@ import logging
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import pytz
 
+from aiogram import Bot
+from aiogram.fsm.context import FSMContext
 from sqlalchemy import and_, delete, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.bot.db.models import Option, OptionCategory, PhotoProfile, User, UserOption
+from src.bot.db.models import FriendRequest, LikeProfile, Option, OptionCategory, PhotoProfile, User, UserOption
 from src.bot.utils.decorators import connect_db
+from src.bot.utils.helpers import send_match_notification
 
 
 logging.basicConfig(level=logging.INFO)
@@ -483,3 +486,240 @@ async def get_user_data(session: AsyncSession, user_id: int) -> dict[str, Any]:
                 result['interests'].append(option_name)
 
     return result
+
+
+@connect_db
+async def load_user_like_and_friend(session: AsyncSession, user_id: int, state: FSMContext) -> None:
+    """Загрузка пользователем своих лайков и друзей"""
+    try:
+        # Получаем пользователя из БД
+        user = await session.scalar(select(User).where(User.tg_id == user_id))
+        if not user:
+            logger.error(f'User {user_id} not found')
+            return
+
+        # Получаем все лайки пользователя
+        like_ids = await session.scalars(
+            select(User.tg_id)
+            .join(LikeProfile, User.id == LikeProfile.to_user_id)
+            .where(LikeProfile.from_user_id == user.id)
+        )
+
+        # Получаем все запросы в друзья
+        friend_ids = await session.scalars(
+            select(User.tg_id)
+            .join(FriendRequest, User.id == FriendRequest.to_user_id)
+            .where(FriendRequest.from_user_id == user.id)
+        )
+
+        # Получаем взаимные лайки
+        reciprocated_like_ids = await session.scalars(
+            select(User.tg_id)
+            .join(LikeProfile, User.id == LikeProfile.from_user_id)
+            .where(
+                LikeProfile.to_user_id == user.id,
+                LikeProfile.is_reciprocated,
+            )
+        )
+
+        # Получаем взаимные запросы в друзья
+        reciprocated_friend_ids = await session.scalars(
+            select(User.tg_id)
+            .join(FriendRequest, User.id == FriendRequest.from_user_id)
+            .where(
+                FriendRequest.to_user_id == user.id,
+                FriendRequest.is_reciprocated,
+            )
+        )
+
+        reciprocated_ids = set(reciprocated_like_ids) | set(reciprocated_friend_ids)
+
+        # Обновляем состояние
+        await state.update_data(
+            {
+                'liked_profile_ids': list(like_ids),
+                'friend_profile_ids': list(friend_ids),
+                'reciprocated_profile_ids': list(reciprocated_ids),
+            }
+        )
+
+        logger.info(
+            f'Loaded likes and friends for user {user_id}: '
+            f'likes={list(like_ids)}, friends={list(friend_ids)}, '
+            f'reciprocated={list(reciprocated_ids)}'
+        )
+
+    except Exception as e:
+        logger.error(f'Error loading likes and friends: {e}')
+        raise
+
+
+@connect_db
+async def add_like_and_friend_to_db(
+    session: AsyncSession,
+    from_tg_id: int,
+    to_tg_id: int,
+    action_type: str,
+    state: FSMContext,
+    bot: Bot,
+) -> None:
+    """Добавление лайка и дружбы в БД, проверка существования пользователей"""
+
+    try:
+        # Проверяем существование пользователей
+        from_user_exists = await session.scalar(select(exists().where(User.tg_id == from_tg_id)))
+        to_user_exists = await session.scalar(select(exists().where(User.tg_id == to_tg_id)))
+
+        if not from_user_exists or not to_user_exists:
+            logger.info(f'*** Пользователи с tg_id  {from_tg_id} и {to_tg_id} не существуют в базе данных')
+            return
+
+        # Получаем id пользователей
+        from_user_id = await session.scalar(select(User.id).where(User.tg_id == from_tg_id))
+        to_user_id = await session.scalar(select(User.id).where(User.tg_id == to_tg_id))
+        logger.info(
+            f'*** Пользователи с id  {from_tg_id}-{from_user_id} и {to_tg_id}-{to_user_id} получают существующие id'
+        )
+
+        model: Union[type[LikeProfile], type[FriendRequest]]
+
+        # Определяем модель
+        if action_type == 'like':
+            model = LikeProfile
+        elif action_type == 'friend':
+            model = FriendRequest
+        else:
+            raise ValueError(f'Unknown action type: {action_type}')
+
+        # Проверяем существование связи
+        exist = await session.scalar(
+            select(
+                exists().where(
+                    model.from_user_id == from_user_id,
+                    model.to_user_id == to_user_id,
+                )
+            )
+        )
+
+        if not exist:
+            session.add(
+                model(
+                    from_user_id=from_user_id,
+                    to_user_id=to_user_id,
+                    date_create=datetime.now(),
+                )
+            )
+            await session.commit()
+
+        # Проверяем взамность лайков
+        is_reciprocal = await session.scalar(
+            select(
+                exists().where(
+                    model.from_user_id == to_user_id,
+                    model.to_user_id == from_user_id,
+                )
+            )
+        )
+
+        # Устанавливаем взамность True
+        if is_reciprocal:
+            data = await state.get_data()
+            reciprocated_ids = data.get('reciprocated_profile_ids', [])
+            if from_tg_id not in reciprocated_ids:
+                reciprocated_ids.append(from_tg_id)
+            if to_tg_id not in reciprocated_ids:
+                reciprocated_ids.append(to_tg_id)
+            await state.update_data({'reciprocated_profile_ids': reciprocated_ids})
+            await session.execute(
+                update(model)
+                .where(model.from_user_id == to_user_id)
+                .where(model.to_user_id == from_user_id)
+                .values(is_reciprocated=True)
+            )
+            await session.execute(
+                update(model)
+                .where(model.from_user_id == from_user_id)
+                .where(model.to_user_id == to_user_id)
+                .values(is_reciprocated=True)
+            )
+            await session.commit()
+
+            # Получаем цель
+            target = 'like' if action_type == 'like' else 'friend'
+
+            # Отправляем уведомления обоим пользователям
+            if bot:
+                try:
+                    await send_match_notification(bot, from_tg_id, to_tg_id, state, target)
+                    await send_match_notification(bot, to_tg_id, from_tg_id, state, target)
+                except Exception as e:
+                    logger.error(f'*** Ошибка в send_match_notification: {e}', exc_info=True)
+
+    except Exception as e:
+        logger.error(f'*** Ошибка в add_like_and_friend_to_db: {e}', exc_info=True)
+        await session.rollback()
+    finally:
+        data = await state.get_data()
+        liked_ids = data.get('liked_profile_ids', [])
+        logger.info(f'*** liked_ids: {liked_ids}')
+
+        if to_tg_id not in liked_ids:
+            liked_ids.append(to_tg_id)
+            await state.update_data({'liked_profile_ids': liked_ids})
+
+
+@connect_db
+async def delete_like_and_friend_from_db(
+    session: AsyncSession,
+    from_tg_id: int,
+    to_tg_id: int,
+    action_type: str,
+) -> None:
+    """Удаление лайка и дружбы из БД, проверка перед удалением"""
+
+    # Проверяем существование пользователей
+    from_user_exists = await session.scalar(select(exists().where(User.tg_id == from_tg_id)))
+    to_user_exists = await session.scalar(select(exists().where(User.tg_id == to_tg_id)))
+
+    if not from_user_exists or not to_user_exists:
+        logger.info(f'*** Пользователи с tg_id  {from_tg_id} и {to_tg_id} не существуют в базе данных')
+        return
+
+    # Получаем id пользователей
+    from_user_id = await session.scalar(select(User.id).where(User.tg_id == from_tg_id))
+    to_user_id = await session.scalar(select(User.id).where(User.tg_id == to_tg_id))
+    logger.info(
+        f'*** Пользователи с id  {from_tg_id}-{from_user_id} и {to_tg_id}-{to_user_id} получают существующие id'
+    )
+
+    model: Union[type[LikeProfile], type[FriendRequest]]
+
+    if action_type == 'like':
+        model = LikeProfile
+    elif action_type == 'friend':
+        model = FriendRequest
+    else:
+        raise ValueError(f'Unknown action type: {action_type}')
+
+    await session.execute(
+        delete(model).where(
+            model.from_user_id == from_user_id,
+            model.to_user_id == to_user_id,
+        )
+    )
+    await session.commit()
+
+
+@connect_db
+async def check_reciprocity(session: AsyncSession, from_tg_id: int, to_tg_id: int) -> bool | None:
+    # Сначала находим пользователей по tg_id
+    from_user = await session.scalar(select(User).where(User.tg_id == from_tg_id))
+    to_user = await session.scalar(select(User).where(User.tg_id == to_tg_id))
+
+    if not from_user or not to_user:
+        return False
+
+    # Теперь сравниваем их внутренние ID
+    return await session.scalar(
+        select(exists().where(LikeProfile.from_user_id == from_user.id, LikeProfile.to_user_id == to_user.id))
+    )
