@@ -316,7 +316,7 @@ async def get_user_profile_data(user_id: int) -> tuple[list[str] | None, str] | 
 
 🎂 <b>Возраст:</b> {user_data.get('year', 'не указан')}
 ♂️ <b>Пол:</b> {user_data.get('gender', 'не указан')}
-💍 <b>Статус:</b> {user_data.get('status', 'не указан')}(а)
+💍 <b>Статус:</b> {user_data.get('status', 'не указан')}{'(а)' if user_data.get('status') == 'Свободен' else ''}
 🎯 <b>Цель:</b> {user_data.get('target', 'не указана')}
 🏙 <b>Район:</b> {user_data.get('district', 'не указан')}
 💼 <b>Профессия:</b> {user_data.get('profession', 'не указана')}

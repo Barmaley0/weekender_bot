@@ -61,7 +61,7 @@ jobs:
             exit 1
           }
       - name: Deploy application
-        run: |-
+        run: |
           ssh -T -p ${{ secrets.SSH_PORT }} \
               -i ~/.ssh/id_ed25519 \
               ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
@@ -93,7 +93,8 @@ jobs:
           echo "🔨 Пересборка и запуск бота..."
           docker-compose build --no-cache bot
           docker-compose up -d --force-recreate bot
-
+      - name: Apply migartions
+        run: |-
           # Ожидание готовности бота
           echo "⏳ Ожидание готовности сервиса бота (30 сек)..."
           timeout 30s bash -c 'until docker-compose logs bot | grep -q "Application startup complete"; do sleep 2; done' || {
@@ -110,13 +111,11 @@ jobs:
               # Получаем текущую и головную ревизии
               CURRENT_REV=$(timeout 60s docker-compose exec bot sh -c "cd /app && alembic current" | awk '{print $1}' || echo "")
               HEAD_REV=$(timeout 60s docker-compose exec bot sh -c "cd /app && alembic heads" | head -1 | awk '{print $1}' || echo "")
-
               if [ -z "$CURRENT_REV" ] || [ -z "$HEAD_REV" ]; then
                   echo "❌ Не удалось определить ревизии"
                   docker-compose logs bot
                   exit 1
               fi
-
               if [ "$CURRENT_REV" != "$HEAD_REV" ]; then
                   echo "🔄 Обнаружены неприменённые миграции (current: $CURRENT_REV, head: $HEAD_REV). Применяем..."
                   timeout 300s docker-compose exec bot sh -c "cd /app && alembic upgrade head" || {
@@ -135,7 +134,6 @@ jobs:
                   docker-compose logs db
                   exit 1
               }
-
               echo "🔄 Применяем все миграции..."
               timeout 300s docker-compose exec bot sh -c "cd /app && alembic upgrade head" || {
                   echo "❌ Ошибка применения миграций"
