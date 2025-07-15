@@ -1,4 +1,5 @@
 .dockerignore
+.docker-compose.yaml
 
 # Стандартные игноры Python
 __pycache__/
