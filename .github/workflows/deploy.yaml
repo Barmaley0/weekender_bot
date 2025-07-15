@@ -93,8 +93,7 @@ jobs:
           echo "🔨 Пересборка и запуск бота..."
           docker-compose build --no-cache bot
           docker-compose up -d --force-recreate bot
-      - name: Apply migartions
-        run: |-
+
           # Ожидание готовности бота
           echo "⏳ Ожидание готовности сервиса бота (30 сек)..."
           timeout 30s bash -c 'until docker-compose logs bot | grep -q "Application startup complete"; do sleep 2; done' || {
