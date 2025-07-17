@@ -12,6 +12,7 @@ class UserData(StatesGroup):
     interests = State()  # list[str]
     shown_events = State()  # str
     edit_mode = State()  # str
+    total_likes = State()  # int
 
 
 class PeopleSearch(StatesGroup):
