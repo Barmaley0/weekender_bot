@@ -35,6 +35,7 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(Boolean(), default=False, nullable=False)
     profession: Mapped[str] = mapped_column(String(50), nullable=True)
     about: Mapped[str] = mapped_column(Text, nullable=True)
+    total_likes: Mapped[int] = mapped_column(Integer(), default=0, nullable=False)
 
     options: Mapped[list['UserOption']] = relationship(
         back_populates='user',

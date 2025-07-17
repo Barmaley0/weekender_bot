@@ -314,13 +314,15 @@ async def get_user_profile_data(user_id: int) -> tuple[list[str] | None, str] | 
     profile_text = f"""
 👤 <b>{user_data.get('first_name', 'не указан')}</b>
 
+❤️ <b>Лайков:</b> {user_data.get('total_likes', '_')}
+
 🎂 <b>Возраст:</b> {user_data.get('year', 'не указан')}
 ♂️ <b>Пол:</b> {user_data.get('gender', 'не указан')}
 💍 <b>Статус:</b> {user_data.get('status', 'не указан')}{'(а)' if user_data.get('status') == 'Свободен' else ''}
 🎯 <b>Цель:</b> {user_data.get('target', 'не указана')}
 🏙 <b>Район:</b> {user_data.get('district', 'не указан')}
+🎮 <b>Интересы:</b> {', '.join(interests) or 'не указаны'}
 💼 <b>Профессия:</b> {user_data.get('profession', 'не указана')}
-❤️ <b>Интересы:</b> {', '.join(interests) or 'не указаны'}
 📄 <b>О себе:</b> {user_data.get('about', 'не указано')}
     """
     return photo_ids, profile_text
@@ -372,7 +374,7 @@ async def send_user_profile(
         return False
 
 
-#  --- Вспомогательные функции ---
+#  --- Вспомогательные функции системы лайков ---
 async def _send_media(
     media: list[InputMediaType],
     recipient: Union[Message, CallbackQuery, int],

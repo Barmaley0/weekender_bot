@@ -49,6 +49,28 @@ async def user_data_exists(session: AsyncSession, tg_id: int) -> bool:
 
 
 @connect_db
+async def add_total_like(session: AsyncSession, to_tg_id: int) -> None:
+    user_exists = await session.scalar(select(exists().where(User.tg_id == to_tg_id)))
+    if not user_exists:
+        return
+
+    await session.execute(update(User).where(User.tg_id == to_tg_id).values(total_likes=User.total_likes + 1))
+    await session.commit()
+
+
+@connect_db
+async def delete_total_like(session: AsyncSession, to_tg_id: int) -> None:
+    user_exists = await session.scalar(select(exists().where(User.tg_id == to_tg_id)))
+    if not user_exists:
+        return
+
+    await session.execute(
+        update(User).where(User.tg_id == to_tg_id).values(total_likes=func.greatest(User.total_likes - 1, 0))
+    )
+    await session.commit()
+
+
+@connect_db
 async def get_user_by_username(session: AsyncSession, username: str) -> User | None:
     return await session.scalar(select(User).where(func.lower(User.username) == func.lower(username)))
 
@@ -139,13 +161,28 @@ async def find_compatible_users(
     if age_conditions:
         conditions.append(or_(*age_conditions))
 
+    DISTRICT_GROUPS = {
+        'ЦАО': ['ЦАО', 'ЗАО', 'СЗАО', 'САО', 'СВАО', 'ВАО', 'ЮВАО', 'ЮАО', 'ЮЗАО'],
+        'ЗАО': ['ЗАО', 'СЗАО', 'ЮЗАО', 'ЦАО'],
+        'СЗАО': ['СЗАО', 'САО', 'ЗАО', 'ЦАО'],
+        'САО': ['САО', 'СЗАО', 'СВАО', 'ЦАО'],
+        'СВАО': ['СВАО', 'САО', 'ВАО', 'ЦАО'],
+        'ВАО': ['ВАО', 'СВАО', 'ЮВАО', 'ЦАО'],
+        'ЮВАО': ['ЮВАО', 'ВАО', 'ЮАО', 'ЦАО'],
+        'ЮАО': ['ЮАО', 'ЮВАО', 'ЮЗАО', 'ЦАО'],
+        'ЮЗАО': ['ЮЗАО', 'ЮАО', 'ЗАО', 'ЦАО'],
+    }
+
+    districts = DISTRICT_GROUPS.get(user_data['district'], [user_data['district']])
+    logger.info(f'User districts: {user_data["district"]},  searched districts: {districts}')
+
     # 2. Фильтр по округу
     if user_data.get('district'):
         district_condition = exists().where(
             and_(
                 UserOption.user_id == User.id,
                 UserOption.option_id == Option.id,
-                Option.name == user_data['district'],
+                Option.name.in_(districts),
                 OptionCategory.name == 'district',
                 UserOption.selected,
             )
@@ -440,6 +477,7 @@ async def get_user_data(session: AsyncSession, user_id: int) -> dict[str, Any]:
         return {
             'first_name': None,
             'username': None,
+            'total_likes': None,
             'year': None,
             'gender': None,
             'status': None,
@@ -463,6 +501,7 @@ async def get_user_data(session: AsyncSession, user_id: int) -> dict[str, Any]:
         'first_name': user.first_name,
         'username': user.username,
         'year': user.year,
+        'total_likes': user.total_likes,
         'gender': None,
         'status': None,
         'target': None,

@@ -131,6 +131,7 @@ async def toggle_like(callback: CallbackQuery, state: FSMContext, bot: Bot) -> N
             to_tg_id=to_user_id,
             action_type=like_tag,
         )
+        await req_user.delete_total_like(to_tg_id=to_user_id)
     else:
         liked_ids.append(to_user_id)
         await callback.answer('Лайк поставлен!')
@@ -141,6 +142,7 @@ async def toggle_like(callback: CallbackQuery, state: FSMContext, bot: Bot) -> N
             state=state,
             bot=bot,
         )
+        await req_user.add_total_like(to_tg_id=to_user_id)
 
         data = await state.get_data()
         reciprocated_ids = data.get('reciprocated_profile_ids', [])
@@ -176,6 +178,7 @@ async def toggle_friend(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
             to_tg_id=to_user_id,
             action_type=friend_tag,
         )
+        await req_user.delete_total_like(to_tg_id=to_user_id)
     else:
         friend_ids.append(to_user_id)
         await callback.answer('Лайк поставлен!')
@@ -186,6 +189,7 @@ async def toggle_friend(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
             state=state,
             bot=bot,
         )
+        await req_user.add_total_like(to_tg_id=to_user_id)
 
     await state.update_data({'friend_profile_ids': friend_ids})
     await refresh_profile_message(callback=callback, state=state)
