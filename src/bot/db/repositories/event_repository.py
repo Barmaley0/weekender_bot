@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.bot.db.models import Event, EventInterest, Option, OptionCategory
 from src.bot.db.repositories.user_repository import get_user_data
 from src.bot.utils.decorators import connect_db
-from src.bot.utils.helpers import is_age_in_range
+from src.bot.utils.user_helpers import is_age_in_range
 
 
 logging.basicConfig(level=logging.INFO)
@@ -142,7 +142,7 @@ async def get_recommended_events_new(
     # Основные условия фильтрации
     conditions = []
 
-    # 1. Фильтр по возрасту (обязательный)
+    # Фильтр по возрасту (обязательный)
     age_ranges = await session.scalars(select(Event.year).where(Event.year.is_not(None)).distinct())
     age_conds = []
     for age_range in age_ranges:
@@ -153,15 +153,15 @@ async def get_recommended_events_new(
         return []
     conditions.append(or_(*age_conds))
 
-    # 2. Фильтр по полу (если указан)
+    # Фильтр по полу (если указан)
     if gender := user_data.get('gender'):
         conditions.append(or_(Event.gender == gender, Event.gender.is_(None), Event.gender == 'Любой'))
 
-    # 3. Фильтр по статусу (если указан)
+    # Фильтр по статусу (если указан)
     if status := user_data.get('status'):
         conditions.append(or_(Event.status == status, Event.status.is_(None), Event.status == 'Любой'))
 
-    # 4. Фильтр по интересам (только если указаны)
+    # Фильтр по интересам (только если указаны)
     if interests := user_data.get('interests'):
         stmt = (
             select(EventInterest.event_id)
@@ -171,7 +171,7 @@ async def get_recommended_events_new(
         )
         conditions.append(Event.id.in_(stmt))
 
-    # 5. Исключаем уже показанные события
+    # Исключаем уже показанные события
     if exclude_ids:
         conditions.append(Event.id.not_in(exclude_ids))
 

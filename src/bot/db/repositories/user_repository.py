@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from src.bot.db.models import FriendRequest, LikeProfile, Option, OptionCategory, PhotoProfile, User, UserOption
 from src.bot.utils.decorators import connect_db
-from src.bot.utils.helpers import send_match_notification
+from src.bot.utils.user_helpers import send_match_notification
 
 
 logging.basicConfig(level=logging.INFO)

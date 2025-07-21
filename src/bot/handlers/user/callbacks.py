@@ -6,12 +6,13 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
+import src.bot.db.repositories.admin_repository as req_admin
 import src.bot.db.repositories.event_repository as req_event
 import src.bot.db.repositories.user_repository as req_user
 import src.bot.keyboards.builders as kb
 
 from src.bot.fsm.user_states import PeopleSearch, UserData
-from src.bot.utils.helpers import (
+from src.bot.utils.user_helpers import (
     data_get_update,
     refresh_profile_message,
     safe_delete_message,
@@ -258,12 +259,12 @@ async def find_people(callback: CallbackQuery, state: FSMContext) -> None:
             """
 Выберите возрастной диапазон:
             """,
-            reply_markup=await kb.age_range_kb(state=state),
+            reply_markup=await kb.age_range_find_people_kb(state=state),
         )
         await callback.answer()
 
     except Exception as e:
-        logger.error(f'Error in find_people: {e}', exc_info=True)
+        logger.error(f'❗Error in find_people: {e}', exc_info=True)
         await callback.answer('❌ Произошла ошибка. Попробуйте позже.')
 
 
@@ -297,20 +298,20 @@ async def get_age_range(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
 
         try:
             if isinstance(callback.message, Message):
-                await callback.message.edit_reply_markup(reply_markup=await kb.age_range_kb(state=state))
+                await callback.message.edit_reply_markup(reply_markup=await kb.age_range_find_people_kb(state=state))
                 await callback.answer(f'Диапазон: {age_range if age_range in updated_ranges else "сброшен"}')
             else:
                 await bot.send_message(
                     chat_id=callback.from_user.id,
                     text='Обновите выбор возраста',
-                    reply_markup=await kb.age_range_kb(state=state),
+                    reply_markup=await kb.age_range_find_people_kb(state=state),
                 )
         except TelegramBadRequest as e:
             if 'message is not modified' not in str(e):
                 logger.error(f'Failed to update message: {e}')
                 await callback.answer('❌ Ошибка обновления. Попробуйте ещё раз!', show_alert=True)
     except Exception as e:
-        logger.error(f'Error in get_age_range: {e}', exc_info=True)
+        logger.error(f'❗Error in get_age_range: {e}', exc_info=True)
         await callback.answer('❌ Ошибка выбора возраста. Попробуйте ещё раз!')
 
 
@@ -345,7 +346,7 @@ async def age_done(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None
         await callback.answer()
 
     except Exception as e:
-        logger.error(f'Error in age_done: {e}', exc_info=True)
+        logger.error(f'❗Error in age_done: {e}', exc_info=True)
         await callback.answer('❌ Произошла ошибка. Попробуйте позже.')
 
 
@@ -377,13 +378,14 @@ async def show_more_people(callback: CallbackQuery, state: FSMContext, bot: Bot)
         await show_people_results(callback, state)
         await callback.answer()
     except Exception as e:
-        logger.error(f'Error in show_more_people: {e}', exc_info=True)
+        logger.error(f'❗Error in show_more_people: {e}', exc_info=True)
         await callback.answer('❌ Ошибка при загрузке')
 
 
 # --- Хендлеры основной анкеты ---
 @router_user.callback_query(F.data.startswith('gender_'))
 async def get_gender(callback: CallbackQuery, state: FSMContext) -> None:
+    """Выбор пола"""
     logger.info(f'Current state: {await state.get_state()}, Data: {await state.get_data()}')
     if isinstance(callback.message, Message):
         try:
@@ -423,6 +425,7 @@ async def get_gender(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router_user.callback_query(F.data.startswith('status_'))
 async def get_district(callback: CallbackQuery, state: FSMContext) -> None:
+    """Выбор статуса"""
     logger.info(f'Current state: {await state.get_state()}, Data: {await state.get_data()}')
     if isinstance(callback.message, Message):
         try:
@@ -457,6 +460,7 @@ async def get_district(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router_user.callback_query(F.data.startswith('target_'))
 async def get_target(callback: CallbackQuery, state: FSMContext) -> None:
+    """Выбор цели"""
     logger.info(f'Current state: {await state.get_state()}, Data: {await state.get_data()}')
     if isinstance(callback.message, Message):
         try:
@@ -490,6 +494,7 @@ async def get_target(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router_user.callback_query(F.data.startswith('district_'))
 async def get_interests(callback: CallbackQuery, state: FSMContext) -> None:
+    """Выбор района"""
     logger.info(f'Current state: {await state.get_state()}, Data: {await state.get_data()}')
     if isinstance(callback.message, Message):
         try:
@@ -521,6 +526,7 @@ async def get_interests(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router_user.callback_query(F.data.startswith('interests_') & (F.data != 'interests_done'))
 async def get_save(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
+    """Выбор интересов"""
     logger.info(f'Current state: {await state.get_state()}, Data: {await state.get_data()}')
     if callback.data is None or callback.message is None:
         await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
@@ -529,7 +535,7 @@ async def get_save(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None
     try:
         interests = callback.data.split('_')[1]
         data = await state.get_data()
-        logger.info(f'Updated district -> interests: {data}')
+        logger.info(f'✅ Updated district -> interests: {data}')
 
         current_interests = data.get('interests', [])
         if isinstance(current_interests, str):
@@ -544,7 +550,7 @@ async def get_save(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None
         await state.update_data(interests=updated_interests)
 
         updated_data = await state.get_data()
-        logger.info(f'Updated interests: {updated_data}')
+        logger.info(f'✅ Updated interests: {updated_data}')
 
         try:
             if isinstance(callback.message, Message):
@@ -558,7 +564,7 @@ async def get_save(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None
                 )
         except TelegramBadRequest as e:
             if 'message is not modified' not in str(e):
-                logger.error(f'Failed to update message: {e}')
+                logger.error(f'❗Failed to update message: {e}')
                 await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!', show_alert=True)
     except Exception as e:
         logger.error(e)
@@ -567,6 +573,7 @@ async def get_save(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None
 
 @router_user.callback_query(F.data == 'interests_done')
 async def save_data(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
+    """Сохранение выбранных данных пользователя"""
     logger.info(f'Current state: {await state.get_state()}, Data: {await state.get_data()}')
     try:
         if not callback.message or not isinstance(callback.message, Message):
@@ -578,7 +585,7 @@ async def save_data(callback: CallbackQuery, state: FSMContext, bot: Bot) -> Non
         logger.info(f'Current state data: {data}')
 
         if not data['interests']:
-            logger.error('No interests selected')
+            logger.error('❗No interests selected')
             await callback.answer('❌ Выберите хотя бы один интерес!', show_alert=True)
             return
 
@@ -612,23 +619,24 @@ async def save_data(callback: CallbackQuery, state: FSMContext, bot: Bot) -> Non
 ⭐️ Чат — онлайн общение и поиск компании
                 """
 
-                logger.info('Data saved successfully')
+                logger.info('✅ Data saved successfully')
         except Exception as e:
-            logger.error(f'Failed to save data: {e}')
+            logger.error(f'❗Failed to save data: {e}')
             await callback.answer('❌ При сохранении данных произошла ошибка. Попробуйте ещё раз!', show_alert=True)
             return
 
         is_user_data_exists = await req_user.user_data_exists(callback.from_user.id)
-        logger.info(f'Is user data exists: {is_user_data_exists}')
+        is_user_admin = await req_admin.is_admin(callback.from_user.id)
+        logger.info(f'🔄️ Is user data exists: {is_user_data_exists}')
 
         await safe_delete_message(callback.message)
         await callback.message.answer(
             f'{action} \n{description}',
-            reply_markup=await kb.get_main_kb(user_data_exists=is_user_data_exists),
+            reply_markup=await kb.get_main_kb(user_data_exists=is_user_data_exists, is_admin=is_user_admin),
         )
 
         ia_user_data = await req_user.get_user(callback.from_user.id)
-        logger.info(f'IA user data: {ia_user_data}')
+        logger.info(f'➡️ IA user data: {ia_user_data}')
 
     except Exception as e:
         logger.error(f'Error in status_save: {e}', exc_info=True)

@@ -11,7 +11,7 @@ import src.bot.db.repositories.user_repository as req_user
 import src.bot.keyboards.builders as kb
 
 from src.bot.fsm.user_states import PeopleSearch, UserData
-from src.bot.utils.helpers import show_user_profile, start_events_list
+from src.bot.utils.user_helpers import show_user_profile, start_events_list
 
 
 logging.basicConfig(level=logging.INFO)
@@ -20,21 +20,21 @@ logger = logging.getLogger(__name__)
 router_user = Router()
 
 
-@router_user.message(F.photo)
-async def photo(message: Message) -> None:
-    try:
-        if not message.photo:
-            await message.answer('❌ фото не обнаружено!')
-            return
-        file_id_s = message.photo[-1].file_id
-        await message.answer_photo(
-            file_id_s,
-            caption='Вот твоя фотка',
-        )
-        await message.answer(f'id фотки: {file_id_s}')
-    except Exception as e:
-        logger.error(f'Error in photo handler: {e}')
-        await message.answer('❌ При обработке фото произошла ошибка. Попробуйте ещё раз!')
+# @router_user.message(F.photo)
+# async def photo(message: Message) -> None:
+#     try:
+#         if not message.photo:
+#             await message.answer('❌ фото не обнаружено!')
+#             return
+#         file_id_s = message.photo[-1].file_id
+#         await message.answer_photo(
+#             file_id_s,
+#             caption='Вот твоя фотка',
+#         )
+#         await message.answer(f'id фотки: {file_id_s}')
+#     except Exception as e:
+#         logger.error(f'Error in photo handler: {e}')
+#         await message.answer('❌ При обработке фото произошла ошибка. Попробуйте ещё раз!')
 
 
 @router_user.message(F.text.startswith('@'), StateFilter(PeopleSearch.waiting_for_username))

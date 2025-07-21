@@ -18,7 +18,156 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def get_main_kb(user_data_exists: bool) -> ReplyKeyboardMarkup:
+# Кнопки администратора
+async def get_admin_menu_kb() -> InlineKeyboardMarkup:
+    menu_inline = InlineKeyboardBuilder()
+    menu_inline.add(
+        InlineKeyboardButton(text='Массовая рассылка', callback_data='mass_send'),
+    )
+
+    menu_inline.adjust(1)
+    return menu_inline.as_markup()
+
+
+async def age_select_users_kb(state: FSMContext) -> InlineKeyboardMarkup:
+    data = await state.get_data()
+    current_age_range = data.get('age_users', [])
+    age_range = await get_all_age_range()
+
+    keyboard = InlineKeyboardBuilder()
+    for age in sorted(age_range, key=lambda x: x.id):
+        selected = age.name in current_age_range
+        emoji = '✅' if selected else ''
+        button = InlineKeyboardButton(
+            text=f'{emoji} {age.name}',
+            callback_data=f'select_age_{age.name}',
+        )
+        keyboard.add(button)
+
+    keyboard.row(
+        InlineKeyboardButton(
+            text='🎯 Готово',
+            callback_data='done_age_select',
+        )
+    )
+
+    keyboard.adjust(2)
+    return keyboard.as_markup()
+
+
+async def district_select_users_kb(state: FSMContext) -> InlineKeyboardMarkup:
+    data = await state.get_data()
+    current_district = data.get('district_users', [])
+    districts = await get_all_districts()
+
+    keyboard = InlineKeyboardBuilder()
+    for district in sorted(districts, key=lambda x: x.name):
+        selected = district.name in current_district
+        emoji = '✅' if selected else ''
+        button = InlineKeyboardButton(
+            text=f'{emoji} {district.name}',
+            callback_data=f'select_district_{district.name}',
+        )
+        keyboard.add(button)
+
+    keyboard.row(
+        InlineKeyboardButton(
+            text='🎯 Готово',
+            callback_data='done_district_select',
+        )
+    )
+
+    keyboard.adjust(2)
+    return keyboard.as_markup()
+
+
+async def target_select_users_kb(state: FSMContext) -> InlineKeyboardMarkup:
+    data = await state.get_data()
+    current_target = data.get('target_users', [])
+    targets = await get_all_target()
+
+    keyboard = InlineKeyboardBuilder()
+    for target in sorted(targets, key=lambda x: x.name):
+        selected = target.name in current_target
+        emoji = '✅' if selected else ''
+        button = InlineKeyboardButton(
+            text=f'{emoji} {target.name}',
+            callback_data=f'select_target_{target.name}',
+        )
+        keyboard.add(button)
+
+    keyboard.row(
+        InlineKeyboardButton(
+            text='🎯 Готово',
+            callback_data='done_target_select',
+        )
+    )
+
+    keyboard.adjust(2)
+    return keyboard.as_markup()
+
+
+async def gender_select_users_kb(state: FSMContext) -> InlineKeyboardMarkup:
+    data = await state.get_data()
+    current_gender = data.get('gender_users', [])
+    genders = await get_all_gender()
+
+    keyboard = InlineKeyboardBuilder()
+    for gender in sorted(genders, key=lambda x: x.name):
+        selected = gender.name in current_gender
+        emoji = '✅' if selected else ''
+        button = InlineKeyboardButton(
+            text=f'{emoji} {gender.name}',
+            callback_data=f'select_gender_{gender.name}',
+        )
+        keyboard.add(button)
+
+    keyboard.row(
+        InlineKeyboardButton(
+            text='🎯 Готово',
+            callback_data='done_gender_select',
+        )
+    )
+
+    keyboard.adjust(2)
+    return keyboard.as_markup()
+
+
+async def add_send_message_kb() -> InlineKeyboardMarkup:
+    menu_inline = InlineKeyboardBuilder()
+    menu_inline.add(
+        InlineKeyboardButton(text='Написать', callback_data='add_message'),
+        InlineKeyboardButton(text='Отменить', callback_data='cancel_message'),
+    )
+
+    menu_inline.adjust(2)
+    return menu_inline.as_markup()
+
+
+async def start_mailing_kb() -> InlineKeyboardMarkup:
+    menu_inline = InlineKeyboardBuilder()
+    menu_inline.add(
+        InlineKeyboardButton(text='Начать рассылку', callback_data='start_mailing'),
+        InlineKeyboardButton(text='Отменить', callback_data='cancel_mailing'),
+        InlineKeyboardButton(text='Изменить', callback_data='edit_mailing'),
+    )
+
+    menu_inline.adjust(3)
+    return menu_inline.as_markup()
+
+
+async def done_mailing_kb() -> InlineKeyboardMarkup:
+    menu_inline = InlineKeyboardBuilder()
+    menu_inline.add(
+        InlineKeyboardButton(text='Готово', callback_data='done_mailing'),
+    )
+
+    menu_inline.adjust(1)
+    return menu_inline.as_markup()
+
+
+# Кнопки пользователя
+async def get_main_kb(user_data_exists: bool, is_admin: bool) -> ReplyKeyboardMarkup:
     main_menu = ReplyKeyboardBuilder()
 
     if user_data_exists:
@@ -28,12 +177,18 @@ async def get_main_kb(user_data_exists: bool) -> ReplyKeyboardMarkup:
             KeyboardButton(text='Баллы'),
             KeyboardButton(text='Чат'),
         )
+        if is_admin:
+            main_menu.add(
+                KeyboardButton(text='🪪'),
+            )
+
+        main_menu.adjust(2, 3)
     else:
         main_menu.add(
             KeyboardButton(text='🎉 Начнём 🎉'),
         )
 
-    main_menu.adjust(1 if not user_data_exists else 2)
+        main_menu.adjust(1)
 
     return main_menu.as_markup(
         resize_keyboard=True,
@@ -44,10 +199,10 @@ async def get_main_kb(user_data_exists: bool) -> ReplyKeyboardMarkup:
 async def get_residents_menu_kb() -> InlineKeyboardMarkup:
     menu_inline = InlineKeyboardBuilder()
     menu_inline.add(
+        InlineKeyboardButton(text='Люди рядом со мной', callback_data='find_people'),
+        InlineKeyboardButton(text='Найти по юзернейм', callback_data='find_user'),
         InlineKeyboardButton(text='Посмотреть свой профиль', callback_data='profile'),
         InlineKeyboardButton(text='Изменить профиль', callback_data='edit_profile'),
-        InlineKeyboardButton(text='Посмотреть пользователей чата', callback_data='find_user'),
-        InlineKeyboardButton(text='Найти людей', callback_data='find_people'),
     )
 
     menu_inline.adjust(1)
@@ -142,7 +297,7 @@ async def get_events_kb() -> InlineKeyboardMarkup:
     return menu_inline.as_markup()
 
 
-async def age_range_kb(state: FSMContext) -> InlineKeyboardMarkup:
+async def age_range_find_people_kb(state: FSMContext) -> InlineKeyboardMarkup:
     data = await state.get_data()
     current_age_range = data.get('age_ranges', [])
     age_range = await get_all_age_range()

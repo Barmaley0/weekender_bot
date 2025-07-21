@@ -2,6 +2,7 @@ import logging
 
 from aiogram.types import Message
 
+import src.bot.db.repositories.admin_repository as req_admin
 import src.bot.db.repositories.user_repository as req_user
 import src.bot.keyboards.builders as kb
 
@@ -16,6 +17,7 @@ async def get_text_command_start(message: Message) -> None:
 
     try:
         is_user_data = await req_user.user_data_exists(message.from_user.id)
+        is_user_admin = await req_admin.is_admin(message.from_user.id)
 
         if is_user_data:
             await message.answer(
@@ -28,7 +30,7 @@ async def get_text_command_start(message: Message) -> None:
 
 Всё просто: ты рассказываешь немного о себе — а мы подбираем тебе эмоции ✨ Ну что, начнём?
                 """,
-                reply_markup=await kb.get_main_kb(user_data_exists=is_user_data),
+                reply_markup=await kb.get_main_kb(user_data_exists=is_user_data, is_admin=is_user_admin),
                 parse_mode='html',
             )
         else:
@@ -42,7 +44,7 @@ async def get_text_command_start(message: Message) -> None:
 
 Всё просто: ты рассказываешь немного о себе — а мы подбираем тебе эмоции ✨ Ну что, начнём?
                 """,
-                reply_markup=await kb.get_main_kb(user_data_exists=is_user_data),
+                reply_markup=await kb.get_main_kb(user_data_exists=is_user_data, is_admin=is_user_admin),
                 parse_mode='html',
             )
     except Exception as e:
