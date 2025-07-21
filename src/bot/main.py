@@ -8,6 +8,7 @@ from aiogram import Bot, Dispatcher
 from dotenv import load_dotenv
 
 from src.bot.db.models import create_db_and_tables
+from src.bot.handlers.admin import router_admin
 from src.bot.handlers.user import router_user
 
 
@@ -37,6 +38,7 @@ async def main() -> None:
     bot = Bot(token=TOKEN)
     dp = Dispatcher()
     dp.include_router(router_user)
+    dp.include_router(router_admin)
     logger.info('Application startup complete')
     await dp.start_polling(bot)
 

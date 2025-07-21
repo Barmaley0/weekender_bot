@@ -5,7 +5,6 @@ from typing import Optional, Union
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.filters import Filter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     CallbackQuery,
@@ -19,7 +18,6 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
-import src.bot.db.repositories.admin_repository as req_admin
 import src.bot.db.repositories.event_repository as req_event
 import src.bot.db.repositories.user_repository as req_user
 import src.bot.keyboards.builders as kb
@@ -37,14 +35,6 @@ InputMediaType = Union[
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-# Проверка пользователя на администратора
-class AdminFilter(Filter):
-    async def __call__(self, message: Message) -> bool:
-        if message.from_user is not None:
-            return await req_admin.is_admin(message.from_user.id)
-        return False
 
 
 # Получаем значение обрабатываем и возвращаем старое и новое значение
