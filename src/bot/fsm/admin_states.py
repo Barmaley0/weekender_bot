@@ -10,3 +10,4 @@ class MassSendMessage(StatesGroup):
     media_upload = State()  # list[dict]
     preview = State()  # bool - состояние предппросмотра
     selected_users = State()  # list[int]
+    is_full_mailing = State()  # bool

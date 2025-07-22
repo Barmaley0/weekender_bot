@@ -21,10 +21,9 @@ import src.bot.keyboards.builders as kb
 from src.bot.db.repositories.admin_repository import is_admin
 from src.bot.fsm.admin_states import MassSendMessage
 from src.bot.utils.admin_helpers import (
-    process_mailing,
+    process_mailing_with_report,
     process_single_media,
     selection_message_handler,
-    send_final_report,
     validate_callback,
     validate_content,
 )
@@ -45,9 +44,9 @@ router_admin = Router()
 media_groups: dict[str, dict[str, Any]] = {}
 
 
-@router_admin.callback_query(F.data.startswith('mass_'))
+@router_admin.callback_query(F.data == 'mass_send')
 async def age_selection_question(callback: CallbackQuery, state: FSMContext) -> None:
-    """Обработчик выбора возраста"""
+    """Начало массовой рассылки и выбор возраста"""
     if not callback.from_user or not callback.data or not isinstance(callback.message, Message):
         await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
         return
@@ -56,6 +55,7 @@ async def age_selection_question(callback: CallbackQuery, state: FSMContext) -> 
         await callback.answer('❌ Недостаточно прав!', show_alert=True)
         return
 
+    await state.update_data(is_full_mailing=False)
     await state.set_state(MassSendMessage.age_users)
     try:
         await callback.message.answer(
@@ -259,6 +259,35 @@ async def gender_selection_answer(callback: CallbackQuery, state: FSMContext, bo
         await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
 
 
+@router_admin.callback_query(F.data == 'mass_send_all')
+async def mass_send_all_flag(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.from_user or not callback.data or not isinstance(callback.message, Message):
+        await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
+        return
+    """Установка флага mass_send_all"""
+    if not await is_admin(callback.from_user.id):
+        await callback.answer('❌ Недостаточно прав!', show_alert=True)
+        return
+
+    is_full_mailing = await state.update_data(mass_send_all=True)
+    logger.info(f'➡️ User {callback.from_user.id} set mass_send_all flag to {is_full_mailing}')
+
+    users = await req_admin.get_all_users_tg_id()
+    logger.info(f'➡️ All users: {users}')
+    if not users:
+        await callback.answer('❌ Нет пользователей для отправки!', show_alert=True)
+        return
+    await state.update_data(selected_users=users)
+
+    # Просто показываем количество пользователей
+    await callback.message.answer(
+        f'Всего пользователей: 👥 {len(users)}',
+        reply_markup=await kb.add_send_message_kb(),
+        parse_mode='html',
+    )
+    await callback.answer()
+
+
 @router_admin.callback_query(F.data == 'done_gender_select')
 async def gender_select_done(callback: CallbackQuery, state: FSMContext) -> None:
     """Обработчик поиска пользователей и вывода их на экран"""
@@ -333,11 +362,13 @@ async def add_message_send_mass(callback: CallbackQuery, state: FSMContext) -> N
 
     data = await state.get_data()
     selected_users = data.get('selected_users', [])
+    is_full_mailing = data.get('is_full_mailing')
 
     await state.clear()
 
     if selected_users:
         await state.update_data(selected_users=selected_users)
+        await state.update_data(is_full_mailing=is_full_mailing)
 
     await state.set_state(MassSendMessage.message_text)
     await callback.message.answer(
@@ -544,6 +575,8 @@ async def start_mailing(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
         return
 
     try:
+        await callback.answer('⏳ Рассылка началась', show_alert=True)
+
         data = await state.get_data()
         users = data.get('selected_users', [])
         text: Any = data.get('message_text')
@@ -556,12 +589,10 @@ async def start_mailing(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
         total = len(users)
         progress_msg = await callback.message.answer(f'⏳ Начало рассылки... 0/{total}')
 
-        success, errors = await process_mailing(users, text, media_list, bot, progress_msg)
-
-        await send_final_report(callback.message, total, success, errors)
+        asyncio.create_task(process_mailing_with_report(users, text, media_list, bot, progress_msg, callback.message))
 
     except Exception as e:
-        logger.error(f'Ошибка в рассылке: {e}')
+        logger.error(f'❗️Error in start_mailing: {e}')
         await callback.message.answer('❌ Произошла ошибка при рассылке')
     finally:
         await state.clear()

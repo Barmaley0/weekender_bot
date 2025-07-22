@@ -37,6 +37,15 @@ async def get_all_admin(session: AsyncSession) -> list[int]:
 
 
 @connect_db
+async def get_all_users_tg_id(session: AsyncSession) -> list[int]:
+    """Получаем список всех пользователей (tg_id)"""
+    users = await session.scalars(select(User.tg_id))
+    list_users = [tg_id for tg_id in users.all()]
+
+    return list_users
+
+
+@connect_db
 async def get_users_for_mass_send(session: AsyncSession, state: FSMContext) -> list[tuple[int, Optional[str]]]:
     """Получаем список всех пользователей (tg_id, username) согласно фильтрам рассылки"""
     data = await state.get_data()

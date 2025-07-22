@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 async def get_admin_menu_kb() -> InlineKeyboardMarkup:
     menu_inline = InlineKeyboardBuilder()
     menu_inline.add(
-        InlineKeyboardButton(text='Массовая рассылка', callback_data='mass_send'),
+        InlineKeyboardButton(text='Массовая рассылка (по фильтрам)', callback_data='mass_send'),
+        InlineKeyboardButton(text='Массовая рассылка (всем)', callback_data='mass_send_all'),
     )
 
     menu_inline.adjust(1)

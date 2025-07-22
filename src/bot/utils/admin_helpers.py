@@ -131,9 +131,26 @@ async def process_mailing(
             errors += 1
             logger.error(f'Ошибка отправки для {tg_id}: {e}')
 
-        await asyncio.sleep(2)  # Задержка перед следующей итерацией
+        await asyncio.sleep(0.1)  # Задержка перед следующей итерацией
 
     return success, errors
+
+
+async def process_mailing_with_report(
+    users: list[int],
+    text: str,
+    media_list: list[dict[str, Any]],
+    bot: Bot,
+    progress_msg: Message,
+    message: Message,
+) -> None:
+    """Фоновая задача для обработки рассылки с отчетом"""
+    try:
+        success, errors = await process_mailing(users, text, media_list, bot, progress_msg)
+        await send_final_report(message, len(users), success, errors)
+    except Exception as e:
+        logger.error(f'❗Error in background mailing: {e}')
+        await message.answer('❌ Рассылка прервана из-за ошибки в фоновой задаче!')
 
 
 async def send_media_message(chat_id: int, text: str, media_list: list, bot: Bot, current_index: int) -> None:
@@ -194,6 +211,7 @@ async def update_progress(progress_msg: Message, current: int, total: int, succe
             await progress_msg.edit_text(
                 f'⏳ Рассылка... {current}/{total}\n✅ Успешно: {success}\n❌ Ошибок: {errors}'
             )
+            logger.info(f'➡️ Progress send message: {current}/{total}, ✅ Success: {success}, ❌ Errors: {errors}')
         except Exception:
             pass
 
@@ -201,3 +219,4 @@ async def update_progress(progress_msg: Message, current: int, total: int, succe
 async def send_final_report(message: Message, total: int, success: int, errors: int) -> None:
     """Отправка финального отчета"""
     await message.answer(f'📤 Рассылка завершена\n▪ Всего: {total}\n▪ Успешно: {success}\n▪ Ошибок: {errors}')
+    logger.info(f'➡️ Final send message: 🟢 {total}, ✅ Success: {success}, ❌ Errors: {errors}')
