@@ -460,7 +460,7 @@ async def clean_media_group(group_id: str, delay: int = 300) -> None:
 @router_admin.message(MassSendMessage.media_upload, F.photo | F.video | F.document)
 async def process_single_media_upload(message: Message, state: FSMContext) -> None:
     """Обработчик загрузки одного медиафайла"""
-    if not message.from_user or not message.text:
+    if not message.from_user:
         return
 
     if not await is_admin(message.from_user.id):
