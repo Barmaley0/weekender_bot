@@ -7,6 +7,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from dotenv import load_dotenv
 
+import src.bot.db.repositories.admin_repository as req_admin
+import src.bot.db.repositories.support_repository as req_support
 import src.bot.db.repositories.user_repository as req_user
 import src.bot.keyboards.builders as kb
 
@@ -19,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 router_user = Router()
 
+MAIN_MENU_BUTTONS = {'Резиденты', 'Мероприятия', 'Баллы', 'Чат', '🪪', '🎉 Начнём 🎉'}
 
 # @router_user.message(F.photo)
 # async def photo(message: Message) -> None:
@@ -34,7 +37,59 @@ router_user = Router()
 #         await message.answer(f'id фотки: {file_id_s}')
 #     except Exception as e:
 #         logger.error(f'Error in photo handler: {e}')
-#         await message.answer('❌ При обработке фото произошла ошибка. Попробуйте ещё раз!')
+# == True         await message.answer('❌ При обработке фото произошла ошибка. Попробуйте ещё раз!')
+
+
+@router_user.message(F.text & ~F.text.in_(MAIN_MENU_BUTTONS))
+async def user_message_to_support(message: Message) -> None:
+    if not message.text or not message.from_user or not message.bot:
+        await message.answer('❌ Пожалуйста, введите текст')
+        return
+
+    if await req_admin.is_admin(message.from_user.id):
+        await message.answer('❌ Администраторы не могут обращаться к поддержке!')
+        return
+
+    user = await req_user.get_user(tg_id=message.from_user.id)
+    if not user:
+        await message.answer('❌ Сначала заполните свой профиль!')
+        return
+
+    ticket = await req_support.get_active_ticket_for_user(tg_id=message.from_user.id)
+    logger.info(f'➡️ User {message.from_user.id} wants to send a message to support {ticket}')
+    if not ticket:
+        ticket = await req_support.create_support_ticket(tg_id=message.from_user.id)
+        logger.info(f'➡️ Created a new support ticket for user: {message.from_user.id} ticket: {ticket.id}')
+
+    await req_support.add_message_to_ticket(
+        ticket_id=ticket.id,
+        text=message.text,
+        is_from_user=True,
+    )
+
+    admins = await req_admin.get_all_admin()
+    logger.info(f'➡️ Sending message to {len(admins)} admins list: {admins}')
+    for admin_id in admins:
+        try:
+            await message.bot.send_message(
+                chat_id=admin_id,
+                text=f"""
+                Сообщение от пользователя
+<b> 👤 {message.from_user.first_name}</b>
+<b> 📧 {message.from_user.username}</b>
+<b> 🆔 {message.from_user.id}</b>
+<b> 📨 Текст:</b> {message.text}
+                """,
+                reply_markup=await kb.get_admin_reply_message_kb(ticket_id=ticket.id),
+                parse_mode='html',
+                disable_notification=False,
+            )
+        except Exception as e:
+            logger.error(f'❗Failed to send message to admin {admin_id}: {e}')
+
+    messages = await req_support.get_all_messages_from_ticket(ticket_id=ticket.id)
+    if len(messages) == 1:
+        await message.answer('📨 Сообщение отправлено! Вам ответят в ближайшее время! 🫶')
 
 
 @router_user.message(F.text.startswith('@'), StateFilter(PeopleSearch.waiting_for_username))

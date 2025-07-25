@@ -4,6 +4,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
+import src.bot.db.repositories.support_repository as req_support
+
 from src.bot.db.repositories.options_repository import (
     get_all_age_range,
     get_all_districts,
@@ -24,6 +26,7 @@ async def get_admin_menu_kb() -> InlineKeyboardMarkup:
     menu_inline.add(
         InlineKeyboardButton(text='Массовая рассылка (по фильтрам)', callback_data='mass_send'),
         InlineKeyboardButton(text='Массовая рассылка (всем)', callback_data='mass_send_all'),
+        InlineKeyboardButton(text='Проверить обращения', callback_data='check_tickets'),
     )
 
     menu_inline.adjust(1)
@@ -161,6 +164,65 @@ async def done_mailing_kb() -> InlineKeyboardMarkup:
     menu_inline = InlineKeyboardBuilder()
     menu_inline.add(
         InlineKeyboardButton(text='Готово', callback_data='done_mailing'),
+    )
+
+    menu_inline.adjust(1)
+    return menu_inline.as_markup()
+
+
+# Кнопки обработки тикетов
+async def get_admin_reply_message_kb(ticket_id: int) -> InlineKeyboardMarkup:
+    menu_inline = InlineKeyboardBuilder()
+    logger.info(f'➡️ Get admin reply message for {ticket_id}')
+    menu_inline.add(
+        InlineKeyboardButton(text='Ответить', callback_data=f'reply_admin_{ticket_id}'),
+        InlineKeyboardButton(
+            text='Закрыть тикет',
+            callback_data=f'close_ticket_{ticket_id}',
+        ),
+    )
+
+    menu_inline.adjust(2)
+    return menu_inline.as_markup()
+
+
+async def get_admin_reply_ticket_list_kb(ticket_id: int) -> InlineKeyboardMarkup:
+    menu_inline = InlineKeyboardBuilder()
+    menu_inline.add(
+        InlineKeyboardButton(text='Ответить', callback_data=f'reply_admin_{ticket_id}'),
+        InlineKeyboardButton(text='Закрыть тикет', callback_data=f'close_ticket_{ticket_id}'),
+        InlineKeyboardButton(text='Назад', callback_data='check_tickets'),
+    )
+
+    menu_inline.adjust(2)
+    return menu_inline.as_markup()
+
+
+async def get_admin_tickets_kb(ticket_id: int) -> InlineKeyboardMarkup:
+    ticket = await req_support.get_ticket_with_messages(ticket_id)
+    user = ticket.user
+    menu_inline = InlineKeyboardBuilder()
+
+    logger.info(f'➡️ Get admin ticket {ticket.id} for {user.first_name or user.username or user.tg_id}')
+    menu_inline.add(
+        InlineKeyboardButton(
+            text=f'Чат с пользователем {user.first_name or user.username or user.tg_id}',
+            callback_data=f'admin_chat_{ticket.id}',
+        ),
+        InlineKeyboardButton(
+            text='Закрыть тикет',
+            callback_data=f'close_ticket_{ticket.id}',
+        ),
+    )
+
+    menu_inline.adjust(1)
+    return menu_inline.as_markup()
+
+
+async def cancel_admin_answer_kb() -> InlineKeyboardMarkup:
+    menu_inline = InlineKeyboardBuilder()
+    menu_inline.add(
+        InlineKeyboardButton(text='Отмена', callback_data='cancel_reply'),
     )
 
     menu_inline.adjust(1)

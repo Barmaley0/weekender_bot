@@ -6,9 +6,9 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.bot.db.models import Event, EventInterest, Option, OptionCategory
-from src.bot.db.repositories.user_repository import get_user_data
+from src.bot.db.repositories.user_data_utils import get_user_data
+from src.bot.utils.age_range_utils import is_age_in_range
 from src.bot.utils.decorators import connect_db
-from src.bot.utils.user_helpers import is_age_in_range
 
 
 logging.basicConfig(level=logging.INFO)

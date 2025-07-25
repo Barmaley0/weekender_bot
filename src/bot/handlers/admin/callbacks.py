@@ -16,10 +16,11 @@ from aiogram.types import (
 )
 
 import src.bot.db.repositories.admin_repository as req_admin
+import src.bot.db.repositories.support_repository as req_support
 import src.bot.keyboards.builders as kb
 
 from src.bot.db.repositories.admin_repository import is_admin
-from src.bot.fsm.admin_states import MassSendMessage
+from src.bot.fsm.admin_states import AdminChatState, MassSendMessage
 from src.bot.utils.admin_helpers import (
     process_mailing_with_report,
     process_single_media,
@@ -42,6 +43,170 @@ logger = logging.getLogger(__name__)
 router_admin = Router()
 
 media_groups: dict[str, dict[str, Any]] = {}
+
+
+@router_admin.callback_query(F.data.startswith('admin_chat_'))
+async def handle_admin_chat(callback: CallbackQuery, state: FSMContext) -> None:
+    """Обработчик просмотра истории переписки в тикете"""
+    if not callback.data or not callback.from_user or not isinstance(callback.message, Message):
+        await callback.answer('❌ Ошибка: данные не получены')
+        return
+
+    if not await is_admin(callback.from_user.id):
+        await callback.answer('❌ Недостаточно прав!', show_alert=True)
+        return
+
+    ticket_id = int(callback.data.split('_')[2])
+    logger.info(f'➡️ User {callback.from_user.id} wants to see ticket {ticket_id}')
+
+    # Получаем тикет с сообщениями
+    ticket = await req_support.get_ticket_with_messages(ticket_id)
+    logger.info(f'➡️ User {callback.from_user.id} wants to see ticket {ticket_id}')
+    if not ticket:
+        await callback.answer('❌ Тикет не найден', show_alert=True)
+        return
+
+    user = ticket.user
+    logger.info(f'➡️ User {callback.from_user.id} wants to see chat with {user.tg_id}')
+    if not user:
+        await callback.answer('❌ Пользователь не найден', show_alert=True)
+        return
+
+    # Формируем историю переписки
+    messages_text = [
+        f'📝 <b>Чат с @{user.username or user.first_name or user.tg_id}</b>',
+        f'🆔 ID пользователя: {user.tg_id}',
+        f'📅 Дата создания: {ticket.date_create.strftime("%d.%m.%Y %H:%M") if ticket.date_create else "N/A"}',
+        '<b>История сообщений:</b>',
+    ]
+
+    for msg in ticket.messages:
+        sender = f'👤 {user.first_name}' if msg.is_from_user else '🟣 Weekender'
+        time = msg.date_create.strftime('%d.%m %H:%M') if msg.date_create else 'N/A'
+        messages_text.append(f'{sender} [{time}]:\n{msg.text}')
+
+    # Отправляем историю переписки
+    try:
+        await callback.message.edit_text(
+            text='\n\n'.join(messages_text),
+            reply_markup=await kb.get_admin_reply_ticket_list_kb(ticket_id=ticket_id),
+            parse_mode='HTML',
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f'Ошибка при отображении тикета {ticket_id}: {e}')
+        await callback.answer('❌ Ошибка при загрузке переписки')
+
+
+@router_admin.callback_query(F.data.startswith('reply_admin_'))
+async def admin_reply_to_user(callback: CallbackQuery, state: FSMContext) -> None:
+    """Ответить пользователю"""
+    if callback.data is None or callback.from_user is None or not isinstance(callback.message, Message):
+        await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
+        return
+
+    if not await is_admin(callback.from_user.id):
+        logger.info(f'❗️User {callback.from_user.id} is not admin')
+        await callback.answer('❌ Недостаточно прав!', show_alert=True)
+        return
+
+    ticket_id = int(callback.data.split('_')[2])
+    logger.info(f'➡️ Admin {callback.from_user.id} prepration send a message to {ticket_id}')
+
+    if not callback.from_user.id:
+        await callback.answer('❌ Не удалось получить ID пользователя!')
+        return
+
+    if not ticket_id:
+        await callback.answer('❌ Не удалось получить тикет!')
+        return
+
+    await state.set_state(AdminChatState.waiting_for_reply)
+    await state.update_data(current_ticket_id=ticket_id)
+
+    # Отправляем сообщение пользователю
+    try:
+        await callback.message.answer(
+            '<b>Введите ваш ответ пользователю:</b>',
+            reply_markup=await kb.cancel_admin_answer_kb(),
+            parse_mode='html',
+        )
+        await callback.answer()
+        data = await state.get_data()
+        ticket = data.get('current_ticket_id')
+        text = data.get('waiting_for_reply')
+        logger.info(f'➡️ State: waiting_for_reply. Ticket: {ticket}. state_data: waiting_for_reply. Text: {text}')
+
+    except Exception as e:
+        await callback.answer(f'❌ Ошибка при отправке: {str(e)}')
+
+
+@router_admin.callback_query(F.data == 'cancel_reply')
+async def cancel_reply(callback: CallbackQuery, state: FSMContext) -> None:
+    """Отмена ответа на тикет"""
+    if not callback.from_user or not callback.data or not isinstance(callback.message, Message):
+        await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
+        return
+
+    await state.clear()
+    await callback.message.edit_text('❌ Ответ отменен')
+    await callback.answer()
+
+
+@router_admin.callback_query(F.data == ('check_tickets'))
+async def show_active_tickets(callback: CallbackQuery) -> None:
+    """Показать активные тикеты"""
+    if callback.data is None or callback.from_user is None or not isinstance(callback.message, Message):
+        await callback.answer('❌ При обработке данных произошла ошибка. Попробуйте ещё раз!')
+        return
+
+    if not await is_admin(callback.from_user.id):
+        await callback.answer('❌ Недостаточно прав!', show_alert=True)
+        return
+
+    tickets = await req_support.get_active_tickets()
+    logger.info(f'➡️ User {callback.from_user.id} wants to see active tickets: {tickets}')
+
+    if not tickets:
+        await callback.message.answer('Нет активных обращений')
+        await callback.answer()
+        return
+
+    await callback.message.edit_text('📨 Список активных обращений:')
+    for ticket in tickets:
+        user = ticket.user  # Благодаря .join(User) в запросе
+        ticket_text = (
+            f'👤 {user.first_name}\n'
+            f'🔵 @{user.username}\n'
+            f'🆔 {user.tg_id}\n'
+            f'🆔 ticket: {ticket.id}\n'
+            f'📅 {ticket.date_create.strftime("%d.%m.%Y %H:%M")}'
+        )
+
+        await callback.message.answer(ticket_text, reply_markup=await kb.get_admin_tickets_kb(ticket_id=ticket.id))
+        await callback.answer()
+
+
+@router_admin.callback_query(F.data.startswith('close_ticket_'))
+async def close_ticket_handler(callback: CallbackQuery) -> None:
+    """Закрыть тикет"""
+    if not callback.data or not callback.from_user or not isinstance(callback.message, Message):
+        await callback.answer('❌ Ошибка: данные не получены')
+        return
+
+    if not await is_admin(callback.from_user.id):
+        await callback.answer('❌ Недостаточно прав!', show_alert=True)
+        return
+
+    ticket_id = int(callback.data.split('_')[2])
+
+    try:
+        await req_support.close_ticket(ticket_id)
+        await callback.answer('✅ Тикет закрыт', show_alert=True)
+        await callback.message.edit_reply_markup()  # Убираем кнопки после закрытия
+    except Exception as e:
+        logger.error(f'Ошибка при закрытии тикета {ticket_id}: {e}')
+        await callback.answer('❌ Не удалось закрыть тикет')
 
 
 @router_admin.callback_query(F.data == 'mass_send')

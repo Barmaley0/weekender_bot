@@ -37,8 +37,8 @@ async def main() -> None:
 
     bot = Bot(token=TOKEN)
     dp = Dispatcher()
-    dp.include_router(router_user)
     dp.include_router(router_admin)
+    dp.include_router(router_user)
     logger.info('Application startup complete')
     await dp.start_polling(bot)
 
