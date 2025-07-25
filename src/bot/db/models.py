@@ -71,9 +71,47 @@ class User(Base):
         foreign_keys='FriendRequest.to_user_id',
         passive_deletes=True,
     )
+    support_tickets: Mapped[list['SupportTicket']] = relationship(
+        back_populates='user',
+        cascade='all, delete-orphan',
+        passive_deletes=True,
+    )
 
     def __repr__(self) -> str:
         return f'User id: {self.id}, tg_id: {self.tg_id}'
+
+
+class SupportTicket(Base):
+    __tablename__ = 'support_tickets'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean(), default=True)
+    date_create: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped['User'] = relationship(back_populates='support_tickets', lazy='joined')
+    messages: Mapped[list['SupportMessage']] = relationship(
+        back_populates='ticket',
+        cascade='all, delete-orphan',
+        passive_deletes=True,
+        order_by='SupportMessage.date_create',
+    )
+
+
+class SupportMessage(Base):
+    __tablename__ = 'support_messages'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey('support_tickets.id', ondelete='CASCADE'), index=True)
+    text: Mapped[str] = mapped_column(Text, nullable=True)
+    is_from_user: Mapped[bool] = mapped_column(
+        Boolean(),
+        default=False,
+        doc='True if message is from User, False if message is from Admin',
+    )
+    date_create: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    ticket: Mapped['SupportTicket'] = relationship(back_populates='messages', lazy='joined')
 
 
 class PhotoProfile(Base):

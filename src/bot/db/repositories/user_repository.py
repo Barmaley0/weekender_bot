@@ -2,7 +2,7 @@ import logging
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, Optional, Union
+from typing import Optional, Union
 
 import pytz
 
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.bot.db.models import FriendRequest, LikeProfile, Option, OptionCategory, PhotoProfile, User, UserOption
+from src.bot.db.repositories.user_data_utils import get_user_data
 from src.bot.utils.decorators import connect_db
 from src.bot.utils.user_helpers import send_match_notification
 
@@ -467,64 +468,6 @@ async def set_user_data_save(
         await session.rollback()
         logger.error(f'Failed to save user data: {str(e)}', exc_info=True)
         raise
-
-
-@connect_db
-async def get_user_data(session: AsyncSession, user_id: int) -> dict[str, Any]:
-    user = await session.scalar(select(User).where(User.tg_id == user_id))
-
-    if not user:
-        return {
-            'first_name': None,
-            'username': None,
-            'total_likes': None,
-            'year': None,
-            'gender': None,
-            'status': None,
-            'target': None,
-            'district': None,
-            'profession': None,
-            'about': None,
-            'interests': [],
-        }
-
-    # Получаем все выбранные опции пользователя
-    user_options = await session.execute(
-        select(Option.name, OptionCategory.name)
-        .select_from(UserOption)
-        .join(Option, UserOption.option_id == Option.id)
-        .join(OptionCategory, Option.category_id == OptionCategory.id)
-        .where(UserOption.user_id == user.id)
-    )
-
-    result: dict = {
-        'first_name': user.first_name,
-        'username': user.username,
-        'year': user.year,
-        'total_likes': user.total_likes,
-        'gender': None,
-        'status': None,
-        'target': None,
-        'district': None,
-        'profession': user.profession,
-        'about': user.about,
-        'interests': [],
-    }
-
-    for option_name, category_name in user_options:
-        if category_name == 'gender':
-            result['gender'] = option_name
-        if category_name == 'status':
-            result['status'] = option_name
-        if category_name == 'target':
-            result['target'] = option_name
-        if category_name == 'district':
-            result['district'] = option_name
-        if category_name == 'interest':
-            if isinstance(result['interests'], list):
-                result['interests'].append(option_name)
-
-    return result
 
 
 @connect_db

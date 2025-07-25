@@ -11,3 +11,8 @@ class MassSendMessage(StatesGroup):
     preview = State()  # bool - состояние предппросмотра
     selected_users = State()  # list[int]
     is_full_mailing = State()  # bool
+
+
+class AdminChatState(StatesGroup):
+    waiting_for_reply = State()  # str
+    current_ticket_id = State()  # int
