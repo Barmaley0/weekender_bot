@@ -40,7 +40,22 @@ MAIN_MENU_BUTTONS = {'Резиденты', 'Мероприятия', 'Баллы
 # == True         await message.answer('❌ При обработке фото произошла ошибка. Попробуйте ещё раз!')
 
 
-@router_user.message(F.text & ~F.text.in_(MAIN_MENU_BUTTONS))
+@router_user.message(
+    ~StateFilter(
+        UserData.year,
+        UserData.gender,
+        UserData.status,
+        UserData.target,
+        UserData.district,
+        UserData.profession,
+        UserData.about,
+        PeopleSearch.waiting_for_username,
+    ),
+    F.text,
+    ~F.text.in_(MAIN_MENU_BUTTONS),
+    ~F.text.startswith('/'),
+    ~F.text.startswith('@'),
+)
 async def user_message_to_support(message: Message) -> None:
     if not message.text or not message.from_user or not message.bot:
         await message.answer('❌ Пожалуйста, введите текст')
