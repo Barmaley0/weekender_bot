@@ -94,9 +94,7 @@ async def update_user_photos(session: AsyncSession, bot: Bot, tg_id: int) -> lis
     try:
         # Получаем свежие фото
         user_photos = await bot.get_user_profile_photos(user_id=tg_id, limit=10)
-        new_photo_ids = (
-            [photo[-1].file_id for photo in user_photos.photos] if user_photos and user_photos.photos else []
-        )
+        new_photo_ids = [photo[-1].file_id for photo in user_photos.photos] if user_photos.photos else []
 
         # Сохраняем в базу
         await save_user_photos(session, tg_id, new_photo_ids)
