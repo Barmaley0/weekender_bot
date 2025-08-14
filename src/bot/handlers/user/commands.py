@@ -21,6 +21,16 @@ async def cmd_start(message: Message) -> None:
         return
 
     try:
+        user_saved = await req_user.save_first_user(
+            tg_id=message.from_user.id,
+            first_name=message.from_user.first_name,
+            username=message.from_user.username,
+        )
+
+        if not user_saved:
+            await message.answer('❌ Произошла ошибка сохранения данных.')
+            return
+
         profile_photo_ids = list()
 
         try:
@@ -32,12 +42,6 @@ async def cmd_start(message: Message) -> None:
                 logger.info(f'Found {len(profile_photo_ids)} profile photos for user {message.from_user.id}')
         except Exception as e:
             logger.error(f'Failed to get profile photos for user {message.from_user.id}: {e}')
-
-        await req_user.save_first_user(
-            tg_id=message.from_user.id,
-            first_name=message.from_user.first_name,
-            username=message.from_user.username,
-        )
 
         if profile_photo_ids:
             await req_user.save_user_photos(tg_id=message.from_user.id, photo_ids=profile_photo_ids)
