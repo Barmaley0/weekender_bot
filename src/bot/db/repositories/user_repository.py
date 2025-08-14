@@ -97,7 +97,7 @@ async def update_user_photos(session: AsyncSession, bot: Bot, tg_id: int) -> lis
         new_photo_ids = [photo[-1].file_id for photo in user_photos.photos] if user_photos.photos else []
 
         # Сохраняем в базу
-        await save_user_photos(session, tg_id, new_photo_ids)
+        await save_user_photos(tg_id=tg_id, photo_ids=new_photo_ids)
         return new_photo_ids
     except Exception as e:
         logger.error(f'Failed to update photos for user {tg_id}: {e}')
