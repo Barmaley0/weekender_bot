@@ -199,7 +199,7 @@ async def toggle_friend(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
 # --- Хендлеры для профиля ---
 @router_user.callback_query(F.data.startswith('profile'))
 async def get_profile(callback: CallbackQuery) -> None:
-    """Показать профиль с фотографиями"""
+    """Показать свой профиль с фотографиями"""
     if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
         return
     await show_profile_with_photos(callback=callback)

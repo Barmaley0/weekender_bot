@@ -77,17 +77,33 @@ async def get_user_by_username(session: AsyncSession, username: str) -> User | N
 
 
 @connect_db
-async def get_user_photo(session: AsyncSession, tg_id: int) -> list[str] | None:
+async def get_user_photos(session: AsyncSession, tg_id: int) -> list[str] | None:
+    """Получает фото пользователя"""
     photo_list = await session.scalar(
         select(PhotoProfile.profile_photo_ids).join(User, PhotoProfile.user_id == User.id).where(User.tg_id == tg_id)
     )
 
     logger.info(f'User {tg_id} photo list: {photo_list}')
 
-    if not photo_list:
-        return None
+    return photo_list or []
 
-    return photo_list
+
+@connect_db
+async def update_user_photos(session: AsyncSession, bot: Bot, tg_id: int) -> list[str]:
+    """Обновляет фото пользователя и возвращает свежие file_id"""
+    try:
+        # Получаем свежие фото
+        user_photos = await bot.get_user_profile_photos(user_id=tg_id, limit=10)
+        new_photo_ids = (
+            [photo[-1].file_id for photo in user_photos.photos] if user_photos and user_photos.photos else []
+        )
+
+        # Сохраняем в базу
+        await save_user_photos(session, tg_id, new_photo_ids)
+        return new_photo_ids
+    except Exception as e:
+        logger.error(f'Failed to update photos for user {tg_id}: {e}')
+        return []
 
 
 @connect_db
