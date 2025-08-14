@@ -131,7 +131,7 @@ async def update_only_interests(session: AsyncSession, tg_id: int, interests: li
 async def find_compatible_users(
     session: AsyncSession, tg_id: int, age_ranges: list[str], limit: int = 7, exclude_ids: list[int] | None = None
 ) -> Sequence[User]:
-    """Находит совместимых пользователей с учетом цели (дружба/отношения)"""
+    """Находит совместимых пользователей с учетом цели (по возрасту и округу)"""
     logger.info(f'Searching compatible users for tg_id: {tg_id}')
 
     # Получаем данные текущего пользователя
@@ -190,57 +190,6 @@ async def find_compatible_users(
         )
         conditions.append(district_condition)
 
-    # 3. Фильтр по цели (дружба/отношения)
-    if user_data.get('target'):
-        # Получаем цель текущего пользователя
-        current_target = user_data['target']
-
-        # Условие для цели другого пользователя
-        target_condition = exists().where(
-            and_(
-                UserOption.user_id == User.id,
-                UserOption.option_id == Option.id,
-                Option.name == current_target,  # Должна совпадать цель
-                OptionCategory.name == 'target',
-                UserOption.selected,
-            )
-        )
-        conditions.append(target_condition)
-
-        # Дополнительно фильтруем по полу, если цель "отношения"
-        if current_target == 'Отношения' and user_data.get('gender'):
-            opposite_gender = 'Мужской' if user_data['gender'] == 'Женский' else 'Женский'
-            gender_condition = exists().where(
-                and_(
-                    UserOption.user_id == User.id,
-                    UserOption.option_id == Option.id,
-                    Option.name == opposite_gender,
-                    OptionCategory.name == 'gender',
-                    UserOption.selected,
-                )
-            )
-            conditions.append(gender_condition)
-
-    # 4. Фильтр по интересам (хотя бы один общий)
-    if user_data.get('interests'):
-        user_interests_subq = (
-            select(Option.name)
-            .join(UserOption, Option.id == UserOption.option_id)
-            .join(OptionCategory, Option.category_id == OptionCategory.id)
-            .where(UserOption.user_id == current_user.id, OptionCategory.name == 'interest', UserOption.selected)
-        ).scalar_subquery()
-
-        interests_condition = exists().where(
-            and_(
-                UserOption.user_id == User.id,
-                UserOption.option_id == Option.id,
-                Option.name.in_(user_interests_subq),
-                OptionCategory.name == 'interest',
-                UserOption.selected,
-            )
-        )
-        conditions.append(interests_condition)
-
     # Исключаем уже показанных пользователей
     if exclude_ids:
         conditions.append(User.tg_id.not_in(exclude_ids))
@@ -286,7 +235,7 @@ async def save_first_user(session: AsyncSession, tg_id: int, first_name: str, us
 
 
 @connect_db
-async def save_user_photos(session: AsyncSession, tg_id: int, photo_ids: list[str]) -> None:
+async def save_user_photos(session: AsyncSession, tg_id: int, photo_ids: list[str], max_photos: int = 10) -> None:
     try:
         user = await session.scalar(select(User).where(User.tg_id == tg_id))
 
@@ -294,6 +243,10 @@ async def save_user_photos(session: AsyncSession, tg_id: int, photo_ids: list[st
             logger.error(f'User with tg_id {tg_id} not found')
             return
 
+        if len(photo_ids) > max_photos:
+            photo_ids = photo_ids[:max_photos]
+
+        logger.info(f'➡️ User {tg_id} tried to save {len(photo_ids)} photos, limiting to  {max_photos}')
         await session.execute(delete(PhotoProfile).where(PhotoProfile.user_id == user.id))
 
         session.add(
