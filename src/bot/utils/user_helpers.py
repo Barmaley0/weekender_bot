@@ -332,7 +332,7 @@ async def send_user_profile(
             except Exception as e:
                 if 'FILE_REFERENCE' in str(e):
                     logger.warning(f'🔴 Photo expired for user {user_id}, updating...: {e}')
-                    new_photos = await req_user.update_user_photos(user_id, bot)
+                    new_photos = await req_user.update_user_photos(bot, user_id)
                     if new_photos:
                         update_media_group: list[InputMediaType] = [
                             InputMediaPhoto(media=pid) for pid in new_photos[:10]
