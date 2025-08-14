@@ -279,7 +279,7 @@ async def get_user_profile_data(user_id: int) -> tuple[list[str] | None, str] | 
     if not user_data:
         return None, None
 
-    photo_ids = await req_user.get_user_photo(user_id)
+    photo_ids = await req_user.get_user_photos(user_id)
 
     interests = user_data.get('interests', []) or []
 
@@ -308,19 +308,44 @@ async def send_user_profile(
     state: Optional[FSMContext] = None,
 ) -> bool:
     """
-    Отправляет профиль пользователя
+    Отправляет профиль пользователя c автоматическим обновлением фото при ошибках
     Возвращает True если успешно, False если ошибка
     """
+    if bot is None:
+        if isinstance(recipient, (Message, CallbackQuery)):
+            bot = recipient.bot
+        else:
+            logger.error('Bot instance is required')
+            return False
     try:
+        # Получаем данные профиля
         photo_ids, profile_text = await get_user_profile_data(user_id)
         if profile_text is None:
             await _send_error(recipient, '❌ Профиль пользователя не найден', bot)
             return False
 
-        # Отправка медиа
+        # Отправка медиа с оброботкой ошибок
         if photo_ids:
-            media_group: list[InputMediaType] = [InputMediaPhoto(media=pid) for pid in photo_ids[:10]]
-            await _send_media(media_group, recipient, bot)
+            try:
+                media_group: list[InputMediaType] = [InputMediaPhoto(media=pid) for pid in photo_ids[:10]]
+                await _send_media(media_group, recipient, bot)
+            except Exception as e:
+                if 'FILE_REFERENCE' in str(e):
+                    logger.warning(f'🔴 Photo expired for user {user_id}, updating...: {e}')
+                    new_photos = await req_user.update_user_photos(user_id, bot)
+                    if new_photos:
+                        update_media_group: list[InputMediaType] = [
+                            InputMediaPhoto(media=pid) for pid in new_photos[:10]
+                        ]
+                        await _send_media(update_media_group, recipient, bot)
+                    else:
+                        await _send_error(recipient, '❌ Не удалось загрузить новые фотографии', bot)
+                        return False
+                else:
+                    logger.error(f'❗Error showing user profile {user_id}: {e}')
+                    await _send_error(recipient, '❌ Не удалось найти ошибку FILE_REFERENCE', bot)
+                    return False
+
         else:
             await _send_message('Нет фотографий профиля', recipient, bot)
 
