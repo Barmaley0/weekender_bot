@@ -93,14 +93,35 @@ async def update_user_photos(session: AsyncSession, bot: Bot, tg_id: int) -> lis
     """Обновляет фото пользователя и возвращает свежие file_id"""
     try:
         # Получаем свежие фото
-        user_photos = await bot.get_user_profile_photos(user_id=tg_id, limit=10)
-        new_photo_ids = [photo[-1].file_id for photo in user_photos.photos] if user_photos.photos else []
+        try:
+            user_photos = await bot.get_user_profile_photos(user_id=tg_id, limit=10)
+        except Exception as e:
+            logger.warning(f'❗User {tg_id} blocked the bot or bot was removed from the chat: {e}')
 
-        # Сохраняем в базу
-        await save_user_photos(tg_id=tg_id, photo_ids=new_photo_ids)
+        if not user_photos or not user_photos.photos:
+            logger.info(f"➡️ User {tg_id} has no profile photos or they're not accessible")
+
+        new_photo_ids = [photo[-1].file_id for photo in user_photos.photos]
+
+        user = await session.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            logger.warning(f'❗User {tg_id} not found in database')
+            return []
+
+        await session.execute(delete(PhotoProfile).where(PhotoProfile.user_id == user.id))
+        if new_photo_ids:
+            # Сохраняем в базу
+            session.add(
+                PhotoProfile(
+                    user_id=user.id,
+                    profile_photo_ids=new_photo_ids,
+                )
+            )
+        await session.commit()
+        logger.info(f'✅ User {tg_id} photos updated, len {len(new_photo_ids)}')
         return new_photo_ids
     except Exception as e:
-        logger.error(f'Failed to update photos for user {tg_id}: {e}')
+        logger.error(f'❗Failed to update photos for user {tg_id}: {e}')
         return []
 
 
