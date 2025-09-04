@@ -27,6 +27,13 @@ async def cmd_start(message: Message) -> None:
             username=message.from_user.username,
         )
 
+        logger.info(f'➡️ User {message.from_user.id} saved: {user_saved}')
+
+        if user_saved is None:
+            logger.error(f'❗Failed to save user returned None for user {message.from_user.id}')
+            await message.answer('❌ Произошла ошибка базы данных.')
+            return
+
         if not user_saved:
             await message.answer('❌ Произошла ошибка сохранения данных.')
             return
