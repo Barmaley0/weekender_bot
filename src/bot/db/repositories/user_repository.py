@@ -250,23 +250,32 @@ async def find_compatible_users(
 
 
 @connect_db
-async def save_first_user(session: AsyncSession, tg_id: int, first_name: str, username: Optional[str]) -> None:
-    utc_timezone = pytz.timezone('UTC')
-    created_at_utc = utc_timezone.localize(datetime.utcnow())
-    local_timezone = pytz.timezone('Europe/Moscow')
-    created_at_local = created_at_utc.astimezone(local_timezone)
+async def save_first_user(session: AsyncSession, tg_id: int, first_name: str, username: Optional[str]) -> bool:
+    try:
+        utc_timezone = pytz.timezone('UTC')
+        created_at_utc = utc_timezone.localize(datetime.utcnow())
+        local_timezone = pytz.timezone('Europe/Moscow')
+        created_at_local = created_at_utc.astimezone(local_timezone)
 
-    user = await session.scalar(select(User).where(User.tg_id == tg_id))
-    if not user:
-        session.add(
-            User(
-                tg_id=tg_id,
-                first_name=first_name,
-                username=username,
-                date_create=created_at_local,
+        user = await session.scalar(select(User).where(User.tg_id == tg_id))
+        if not user:
+            session.add(
+                User(
+                    tg_id=tg_id,
+                    first_name=first_name,
+                    username=username,
+                    date_create=created_at_local,
+                )
             )
-        )
-        await session.commit()
+            await session.commit()
+            logger.info(f'User {tg_id} saved successfully')
+            return True
+        else:
+            logger.info(f'User {tg_id} already exists')
+            return True
+    except Exception as e:
+        logger.error(f'Failed to save user {tg_id}: {e}', exc_info=True)
+        return False
 
 
 @connect_db
